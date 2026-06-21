@@ -6,51 +6,39 @@ import "core:os"
 import "core:fmt"
 import "core:c"
 
-LLAMA_DYNLIB_PATH:: "/usr/local/lib/libllama.so"
-
-load_necessary_symbol :: proc(lib: dynlib.Library, symbol: string) -> rawptr {
-	address, ok := dynlib.symbol_address(lib, symbol)
-	if !ok {
-		fmt.eprintln("Missing necessary symbol: %s", symbol)
-		panic("Error resolving dynamic symbols (mismatched libllama version?)")
-	}
-	return address
-}
-
 main :: proc() {
-	libllama, ok := dynlib.load_library(LLAMA_DYNLIB_PATH)
-	if !ok {
-		panic("Could not open libllama dynamic library")
+	if !load_llama_library() {
+		panic("Could not load the libllama dynamic library")
 	}
 
-	p_llama_backend_init    := cast(proc "c" ()) load_necessary_symbol(libllama, "llama_backend_init")
-	p_llama_backend_free    := cast(proc "c" ()) load_necessary_symbol(libllama, "llama_backend_free")
-	p_llama_model_load_from_file := cast(proc "c" (model_path: cstring, model_params: llama_model_params) -> llama_model_ptr) load_necessary_symbol(libllama, "llama_model_load_from_file")
-	p_llama_model_get_vocab := cast(proc "c" (model: llama_model_ptr) -> llama_vocab_ptr) load_necessary_symbol(libllama, "llama_model_get_vocab")
-	p_llama_init_from_model := cast(proc "c" (model: llama_model_ptr, params: LLAMA_Context_Params) -> llama_context_ptr) load_necessary_symbol(libllama, "llama_init_from_model")
-	p_llama_context_default_params := cast(proc "c" () -> LLAMA_Context_Params)           load_necessary_symbol(libllama, "llama_context_default_params")
+	// p_llama_backend_init    := cast(proc "c" ()) load_necessary_symbol(libllama, "llama_backend_init")
+	// p_llama_backend_free    := cast(proc "c" ()) load_necessary_symbol(libllama, "llama_backend_free")
+	// p_llama_model_load_from_file := cast(proc "c" (model_path: cstring, model_params: llama_model_params) -> llama_model_ptr) load_necessary_symbol(libllama, "llama_model_load_from_file")
+	// p_llama_model_get_vocab := cast(proc "c" (model: llama_model_ptr) -> llama_vocab_ptr) load_necessary_symbol(libllama, "llama_model_get_vocab")
+	// p_llama_init_from_model := cast(proc "c" (model: llama_model_ptr, params: LLAMA_Context_Params) -> llama_context_ptr) load_necessary_symbol(libllama, "llama_init_from_model")
+	// p_llama_context_default_params := cast(proc "c" () -> LLAMA_Context_Params)           load_necessary_symbol(libllama, "llama_context_default_params")
 
-    // tokenizing and decoding
-	p_llama_tokenize        := cast(proc "c" (
-		vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t,
-		tokens: [^]Token, n_tokens_max: c.int32_t,
-		add_special: bool, parse_special: bool) -> c.int32_t)                                        load_necessary_symbol(libllama, "llama_tokenize")
-	p_llama_batch_get_one   := cast(proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> llama_batch) load_necessary_symbol(libllama, "llama_batch_get_one")
-	p_llama_n_ctx           := cast(proc "c" (ctx: llama_context_ptr) -> c.uint32_t)                 load_necessary_symbol(libllama, "llama_n_ctx")
-	p_llama_get_memory      := cast(proc "c" (ctx: llama_context_ptr) -> llama_memory_ptr)           load_necessary_symbol(libllama, "llama_get_memory")
-	p_llama_memory_seq_pos_max := cast(proc "c" (mem: llama_memory_ptr, seq_id: llama_seq_id) -> llama_pos) load_necessary_symbol(libllama, "llama_memory_seq_pos_max")
-	p_llama_decode          := cast(proc "c" (ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t) load_necessary_symbol(libllama, "llama_decode")
-	p_llama_sampler_sample  := cast(proc "c" (smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token) load_necessary_symbol(libllama, "llama_sampler_sample")
-	p_llama_vocab_is_eog    := cast(proc "c" (vocab: llama_vocab_ptr, token: Token) -> bool)         load_necessary_symbol(libllama, "llama_vocab_is_eog")
-	p_llama_token_to_piece  := cast(proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t) load_necessary_symbol(libllama, "llama_token_to_piece")
+    // // tokenizing and decoding
+	// p_llama_tokenize        := cast(proc "c" (
+	// 	vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t,
+	// 	tokens: [^]Token, n_tokens_max: c.int32_t,
+	// 	add_special: bool, parse_special: bool) -> c.int32_t)                                        load_necessary_symbol(libllama, "llama_tokenize")
+	// p_llama_batch_get_one   := cast(proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> llama_batch) load_necessary_symbol(libllama, "llama_batch_get_one")
+	// p_llama_n_ctx           := cast(proc "c" (ctx: llama_context_ptr) -> c.uint32_t)                 load_necessary_symbol(libllama, "llama_n_ctx")
+	// p_llama_get_memory      := cast(proc "c" (ctx: llama_context_ptr) -> llama_memory_ptr)           load_necessary_symbol(libllama, "llama_get_memory")
+	// p_llama_memory_seq_pos_max := cast(proc "c" (mem: llama_memory_ptr, seq_id: llama_seq_id) -> llama_pos) load_necessary_symbol(libllama, "llama_memory_seq_pos_max")
+	// p_llama_decode          := cast(proc "c" (ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t) load_necessary_symbol(libllama, "llama_decode")
+	// p_llama_sampler_sample  := cast(proc "c" (smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token) load_necessary_symbol(libllama, "llama_sampler_sample")
+	// p_llama_vocab_is_eog    := cast(proc "c" (vocab: llama_vocab_ptr, token: Token) -> bool)         load_necessary_symbol(libllama, "llama_vocab_is_eog")
+	// p_llama_token_to_piece  := cast(proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t) load_necessary_symbol(libllama, "llama_token_to_piece")
 
-	// operations with chained samplers
-	p_llama_sampler_chain_default_params := cast(proc "c" () -> llama_sampler_chain_params)          load_necessary_symbol(libllama, "llama_sampler_chain_default_params")
-	p_llama_sampler_chain_init := cast(proc "c" (params: llama_sampler_chain_params) -> llama_sampler_ptr) load_necessary_symbol(libllama, "llama_sampler_chain_init")
-	p_llama_sampler_init_min_p := cast(proc "c" (min_p: c.float, min_keep: c.size_t) -> llama_sampler_ptr) load_necessary_symbol(libllama, "llama_sampler_init_min_p")
-	p_llama_sampler_init_temp := cast(proc "c" (value: c.float) -> llama_sampler_ptr)                load_necessary_symbol(libllama, "llama_sampler_init_temp")
-	p_llama_sampler_init_dist := cast(proc "c" (seed: c.uint32_t) -> llama_sampler_ptr)              load_necessary_symbol(libllama, "llama_sampler_init_dist")
-	p_llama_sampler_chain_add := cast(proc "c" (chain: llama_sampler_ptr, sampler: llama_sampler_ptr)) load_necessary_symbol(libllama, "llama_sampler_chain_add")
+	// // operations with chained samplers
+	// p_llama_sampler_chain_default_params := cast(proc "c" () -> llama_sampler_chain_params)          load_necessary_symbol(libllama, "llama_sampler_chain_default_params")
+	// p_llama_sampler_chain_init := cast(proc "c" (params: llama_sampler_chain_params) -> llama_sampler_ptr) load_necessary_symbol(libllama, "llama_sampler_chain_init")
+	// p_llama_sampler_init_min_p := cast(proc "c" (min_p: c.float, min_keep: c.size_t) -> llama_sampler_ptr) load_necessary_symbol(libllama, "llama_sampler_init_min_p")
+	// p_llama_sampler_init_temp := cast(proc "c" (value: c.float) -> llama_sampler_ptr)                load_necessary_symbol(libllama, "llama_sampler_init_temp")
+	// p_llama_sampler_init_dist := cast(proc "c" (seed: c.uint32_t) -> llama_sampler_ptr)              load_necessary_symbol(libllama, "llama_sampler_init_dist")
+	// p_llama_sampler_chain_add := cast(proc "c" (chain: llama_sampler_ptr, sampler: llama_sampler_ptr)) load_necessary_symbol(libllama, "llama_sampler_chain_add")
 
 	args := os.args
 	//defer delete(args)
@@ -166,18 +154,14 @@ main :: proc() {
         }
 
         // convert the token to a string, print it and add it to the response
-        buf: [256]u8
-        n := p_llama_token_to_piece(vocab, new_token_id, &buf[0], len(buf), 0, true)
-        if n < 0 {
-        	fmt.eprintln("Failed decoding token to piece")
-        	return
-        }
-
-        token_text := strings.clone_from_bytes(buf[:])
+		token_text, ok := token_to_string(vocab, new_token_id)
+		if !ok {
+			fmt.eprintfln("Error decoding token")
+			return;
+		}
         fmt.printf("%s", token_text)
+        strings.write_string(&response, token_text);
         delete(token_text)
-
-        strings.write_bytes(&response, buf[:]);
 
         // prepare the next batch with the sampled token
         batch = p_llama_batch_get_one(&new_token_id, 1);
