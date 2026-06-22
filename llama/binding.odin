@@ -1,9 +1,11 @@
-package llama_odin_ng
-
+package llama
 import "core:c"
 
-LLAMA_MAX_DEVICES :: 16
-LLAMA_DEFAULT_SEED :: 0xFFFFFFFF
+main :: proc() {
+}
+
+MAX_DEVICES :: 16
+DEFAULT_SEED :: 0xFFFFFFFF
 
 GGML_MAX_SRC :: 10
 GGML_MAX_NAME :: 64
@@ -108,7 +110,7 @@ llama_split_mode :: enum c.int {
 
 // ggml_backend_dev_t :: ^ggml_device
 
-llama_model_params :: struct {
+Model_Params :: struct {
 
     // NULL-terminated list of devices to use for offloading (if NULL, all available devices are used)
     devices: [^]rawptr,		// [^]ggml_backend_dev_t
@@ -517,52 +519,52 @@ foreign {
 	// lpp_get_model :: proc(params: gpt_params_ptr) -> cstring ---
 	// lpp_get_prompt :: proc(params: gpt_params_ptr) -> cstring ---
 
-	llama_backend_init :: proc() ---
-	llama_backend_free :: proc() ---
-	llama_load_model_from_file :: proc(model_path: cstring, model_params: ^llama_model_params) -> llama_model_ptr ---
-	llama_free_model :: proc(model: llama_model_ptr) ---
+	// llama_backend_init :: proc() ---
+	// llama_backend_free :: proc() ---
+	// llama_load_model_from_file :: proc(model_path: cstring, model_params: ^llama_model_params) -> llama_model_ptr ---
+	// llama_free_model :: proc(model: llama_model_ptr) ---
 
-	lpp_get_numa :: proc(params: gpt_params_ptr) -> ggml_numa_strategy ---
+	// lpp_get_numa :: proc(params: gpt_params_ptr) -> ggml_numa_strategy ---
 
-	llama_numa_init :: proc(numa: ggml_numa_strategy) ---
+	// llama_numa_init :: proc(numa: ggml_numa_strategy) ---
 
-	lpp_llama_model_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_model_params_ptr ---
+	// lpp_llama_model_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_model_params_ptr ---
 
-	lpp_llama_context_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_context_params_ptr ---
+	// lpp_llama_context_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_context_params_ptr ---
 
-	llp_llama_new_context_with_model :: proc(model: llama_model_ptr, ctx_params: llama_context_params_ptr) -> llama_context_ptr ---
+	// llp_llama_new_context_with_model :: proc(model: llama_model_ptr, ctx_params: llama_context_params_ptr) -> llama_context_ptr ---
 
-	llama_sampler_chain_default_params :: proc() -> llama_sampler_chain_params ---
+	// llama_sampler_chain_default_params :: proc() -> llama_sampler_chain_params ---
 
-	llama_sampler_chain_init :: proc(params: llama_sampler_chain_params) -> llama_sampler_ptr ---
+	// llama_sampler_chain_init :: proc(params: llama_sampler_chain_params) -> llama_sampler_ptr ---
 
-	llama_free :: proc(ctx: llama_context_ptr) ---
+	// llama_free :: proc(ctx: llama_context_ptr) ---
 
-	llama_sampler_free :: proc(smpl: llama_sampler_ptr) ---
+	// llama_sampler_free :: proc(smpl: llama_sampler_ptr) ---
 
-	llama_sampler_init_greedy :: proc() -> llama_sampler_ptr ---
-	llama_sampler_chain_add :: proc(chain: llama_sampler_ptr, smpl: llama_sampler_ptr) ---
+	// llama_sampler_init_greedy :: proc() -> llama_sampler_ptr ---
+	// llama_sampler_chain_add :: proc(chain: llama_sampler_ptr, smpl: llama_sampler_ptr) ---
 
-	lpp_llama_tokenize :: proc(ctx: llama_context_ptr, text: cstring, add_special: c.bool,  /*false*/parse_special: c.bool) -> Tokens ---
+	// lpp_llama_tokenize :: proc(ctx: llama_context_ptr, text: cstring, add_special: c.bool,  /*false*/parse_special: c.bool) -> Tokens ---
 
-	lpp_llama_token_to_piece :: proc(ctx: llama_context_ptr, token: Token,  /*true*/special: c.bool) -> cstring ---
+	// lpp_llama_token_to_piece :: proc(ctx: llama_context_ptr, token: Token,  /*true*/special: c.bool) -> cstring ---
 
-	llama_batch_init :: proc(n_tokens_alloc: c.int32_t, embd: c.int32_t, n_seq_max: c.int32_t) -> llama_batch ---
-	llama_batch_free :: proc(batch: llama_batch) ---
+	// llama_batch_init :: proc(n_tokens_alloc: c.int32_t, embd: c.int32_t, n_seq_max: c.int32_t) -> llama_batch ---
+	// llama_batch_free :: proc(batch: llama_batch) ---
 
-	lpp_llama_batch_add :: proc(batch: ^llama_batch, id: Token, pos: llama_pos, seq_ids: [^]llama_seq_id, seq_ids_len: c.size_t, logits: c.bool) ---
+	// lpp_llama_batch_add :: proc(batch: ^llama_batch, id: Token, pos: llama_pos, seq_ids: [^]llama_seq_id, seq_ids_len: c.size_t, logits: c.bool) ---
 
-	llama_decode :: proc(ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t ---
+	// llama_decode :: proc(ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t ---
 
-	ggml_time_us :: proc() -> c.int64_t ---
+	// ggml_time_us :: proc() -> c.int64_t ---
 
-	llama_n_ctx :: proc(ctx: llama_context_ptr) -> c.int ---
+	// llama_n_ctx :: proc(ctx: llama_context_ptr) -> c.int ---
 
-	llama_sampler_sample :: proc(smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token ---
+	// llama_sampler_sample :: proc(smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token ---
 
-	Token_is_eog :: proc(model: llama_model_ptr, token: Token) -> c.bool ---
+	// Token_is_eog :: proc(model: llama_model_ptr, token: Token) -> c.bool ---
 
-	lpp_llama_batch_clear :: proc(batch: ^llama_batch) ---
+	// lpp_llama_batch_clear :: proc(batch: ^llama_batch) ---
 
-	llama_perf_print :: proc(ptr: rawptr, perf_type: llama_perf_type) ---
+	// llama_perf_print :: proc(ptr: rawptr, perf_type: llama_perf_type) ---
 }
