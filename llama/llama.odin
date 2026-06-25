@@ -46,6 +46,9 @@ sampler_init_temp : proc "c" (value: c.float) -> llama_sampler_ptr
 sampler_init_dist : proc "c" (seed: c.uint32_t) -> llama_sampler_ptr
 sampler_chain_add : proc "c" (chain: llama_sampler_ptr, sampler: llama_sampler_ptr)
 
+chat_apply_template : proc "c" (tmpl: cstring, chat: ^Chat_Message, n_msg: c.size_t, add_assistant: bool, buf: ^u8, length: c.int32_t) -> c.int32_t
+model_chat_template : proc "c" (model: llama_model_ptr, name: cstring) -> cstring
+
 load_library :: proc () -> bool {
 	ok: bool
 	libllama, ok = dynlib.load_library(LLAMA_DYNLIB_PATH)
@@ -74,6 +77,8 @@ load_library :: proc () -> bool {
 	set_proc_address(&sampler_init_temp, "llama_sampler_init_temp")
 	set_proc_address(&sampler_init_dist, "llama_sampler_init_dist")
 	set_proc_address(&sampler_chain_add, "llama_sampler_chain_add")
+	set_proc_address(&chat_apply_template, "llama_chat_apply_template")
+	set_proc_address(&model_chat_template, "llama_model_chat_template")
 
 	return true
 }
@@ -91,4 +96,20 @@ token_to_string :: proc (vocab: llama_vocab_ptr, token: Token) -> (string, bool)
 
 	token_text := strings.clone_from_bytes(buf[:])
 	return token_text, true
+}
+
+format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> string
+{
+	buf: [dynamic]u8 = nil
+	new_len := chat_apply_template(tmpl, &messages[0], len(messages), true, nil, 0);
+	if new_len > c.int32_t(len(buf)) {
+		buf = make_dynamic_array([dynamic]u8)
+		defer delete(buf)
+		new_len = chat_apply_template(tmpl, &messages[0], len(messages), true, &buf[0], i32(len(buf)));
+		if new_len < 0 {
+			panic("Could not apply chat template (out of memory?)")
+		}
+	}
+
+	return strings.clone_from_bytes(buf[:])
 }

@@ -506,6 +506,11 @@ LLAMA_Context_Params :: struct {
     n_samplers: c.size_t,
 };
 
+Chat_Message :: struct {
+    role: cstring,
+    content: cstring
+}
+
 @(default_calling_convention = "c")
 foreign {
 	// lpp_print_usage :: proc(argc: c.int, argv: ^^c.char) ---
