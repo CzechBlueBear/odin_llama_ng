@@ -4,6 +4,7 @@ import "core:c"
 import "core:dynlib"
 import "core:fmt"
 import "core:strings"
+import "base:runtime"
 
 LLAMA_DYNLIB_PATH :: "/usr/local/lib/libllama.so"
 
@@ -98,18 +99,16 @@ token_to_string :: proc (vocab: llama_vocab_ptr, token: Token) -> (string, bool)
 	return token_text, true
 }
 
-format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> string
+format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> cstring
 {
-	buf: [dynamic]u8 = nil
-	new_len := chat_apply_template(tmpl, &messages[0], len(messages), true, nil, 0);
-	if new_len > c.int32_t(len(buf)) {
-		buf = make_dynamic_array([dynamic]u8)
-		defer delete(buf)
-		new_len = chat_apply_template(tmpl, &messages[0], len(messages), true, &buf[0], i32(len(buf)));
-		if new_len < 0 {
-			panic("Could not apply chat template (out of memory?)")
-		}
+	needed_length := chat_apply_template(tmpl, &messages[0], len(messages), true, nil, 0);
+	buf, err := runtime.mem_alloc(int(needed_length) + 1)
+	if err != nil {
+		panic("Out of memory")
 	}
-
-	return strings.clone_from_bytes(buf[:])
+	result := chat_apply_template(tmpl, &messages[0], len(messages), true, &buf[0], needed_length);
+	if result < 0 {
+		panic("Could not apply chat template (out of memory?)")
+	}
+	return cstring(&buf[0])
 }

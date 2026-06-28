@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:c"
 import "core:log"
 import "core:io"
+import "base:runtime"
 import "llama"
 
 Client_State :: struct {
@@ -114,74 +115,78 @@ main :: proc() {
 	}
 
 	state.history = make([dynamic]llama.Chat_Message, 0, 8)
+	append_cstring_to_chat_history(&state, "prompt", state.prompt)
 
-    // allocate space and tokenize the prompt (first call to tokenize() determines the number of tokens,
-    // the second call does the full tokenization)
-    prompt_length := i32(len(state.prompt))
-    is_first := true
-	n_prompt_tokens := -llama.tokenize(state.vocab, state.prompt, prompt_length, nil, 0, is_first, true)
-	prompt_tokens := make([]llama.Token, n_prompt_tokens)
-	defer delete(prompt_tokens)
-	if llama.tokenize(state.vocab, state.prompt, prompt_length, &prompt_tokens[0], n_prompt_tokens, is_first, true) < 0 {
-		fmt.eprintln("Failed to tokenize prompt")
-		return
-	}
+	for {
 
-    // prepare a batch for the prompt, then decode tokens until the end of generation
-    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
-    response := strings.builder_make()
-    for {
-
-        // check if we have enough space in the context to evaluate this batch
-        n_ctx := llama.n_ctx(state.ctx);
-        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + 1;
-        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
-            fmt.eprintln("Context size exceeded")
-            return
-        }
-
-        ret := llama.decode(state.ctx, state.batch);
-        if ret != 0 {
-        	fmt.eprintln("Failed decoding model reply")
-        	return
-        }
-
-        // sample the next token
-        new_token_id := llama.sampler_sample(state.sampler, state.ctx, -1);
-
-        // is it an end of generation?
-        if llama.vocab_is_eog(state.vocab, new_token_id) {
-            break;
-        }
-
-        // convert the token to a string, print it and add it to the response
-		token_text, ok := llama.token_to_string(state.vocab, new_token_id)
-		if !ok {
-			fmt.eprintfln("Error decoding token")
-			return;
+	    // allocate space and tokenize the prompt (first call to tokenize() determines the number of tokens,
+	    // the second call does the full tokenization)
+	    prompt_length := i32(len(state.prompt))
+	    is_first := true
+		n_prompt_tokens := -llama.tokenize(state.vocab, state.prompt, prompt_length, nil, 0, is_first, true)
+		prompt_tokens := make([]llama.Token, n_prompt_tokens)
+		defer delete(prompt_tokens)
+		if llama.tokenize(state.vocab, state.prompt, prompt_length, &prompt_tokens[0], n_prompt_tokens, is_first, true) < 0 {
+			fmt.eprintln("Failed to tokenize prompt")
+			return
 		}
-        fmt.printf("%s", token_text)
-        strings.write_string(&response, token_text);
-        delete(token_text)
 
-        // prepare the next batch with the sampled token
-        state.batch = llama.batch_get_one(&new_token_id, 1);
-    }
+	    // prepare a batch for the prompt, then decode tokens until the end of generation
+	    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
+	    response := strings.builder_make()
+	    for {
 
-    // now we are past the first response (for the prompt)
-    // the user must provide further message
-    user_input, ok := read_line()
-    if !ok {
-    	fmt.eprintln("Error reading user input")
-    	return
-    }
-    if len(user_input) == 0 {
-    	return
-    }
+	        // check if we have enough space in the context to evaluate this batch
+	        n_ctx := llama.n_ctx(state.ctx);
+	        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + 1;
+	        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
+	            fmt.eprintln("Context size exceeded")
+	            return
+	        }
 
-    append_message_to_chat_history(&state, "user", user_input)
+	        ret := llama.decode(state.ctx, state.batch);
+	        if ret != 0 {
+	        	fmt.eprintln("Failed decoding model reply")
+	        	return
+	        }
 
-    new_prompt := llama.format_messages(chat_template, state.history[:])
+	        // sample the next token
+	        new_token_id := llama.sampler_sample(state.sampler, state.ctx, -1);
+
+	        // is it an end of generation?
+	        if llama.vocab_is_eog(state.vocab, new_token_id) {
+	            break;
+	        }
+
+	        // convert the token to a string, print it and add it to the response
+			token_text, ok := llama.token_to_string(state.vocab, new_token_id)
+			if !ok {
+				fmt.eprintfln("Error decoding token")
+				return;
+			}
+	        fmt.printf("%s", token_text)
+	        strings.write_string(&response, token_text);
+	        delete(token_text)
+
+	        // prepare the next batch with the sampled token
+	        state.batch = llama.batch_get_one(&new_token_id, 1);
+	    }
+
+	    // now we are past the first response (for the prompt)
+	    // the user must provide further message
+	    user_input, ok := read_line()
+	    if !ok {
+	    	fmt.eprintln("Error reading user input")
+	    	return
+	    }
+	    if len(user_input) == 0 {
+	    	return
+	    }
+
+	    append_message_to_chat_history(&state, "user", user_input)
+
+	    state.prompt = llama.format_messages(chat_template, state.history[:])
+	}
 }
 
 read_line :: proc () -> (string, bool) {
@@ -199,4 +204,22 @@ append_message_to_chat_history :: proc(state: ^Client_State, role: string, conte
 		role = strings.clone_to_cstring(role),
 		content = strings.clone_to_cstring(content)
 	})
+}
+
+append_cstring_to_chat_history :: proc(state: ^Client_State, role: cstring, content: cstring) {
+	append_elem(&state.history, llama.Chat_Message {
+		role = clone_cstring(role),
+		content = clone_cstring(content)
+	})
+}
+
+/// Makes a dynamically allocated copy of the given C-style string.
+clone_cstring :: proc(s: cstring) -> cstring {
+	length := len(s)
+	mem, err := runtime.mem_alloc(length + 1)
+	if err != nil {
+		panic("Out of memory")
+	}
+	runtime.mem_copy(rawptr(&mem[0]), rawptr(s), length)
+	return cstring(&mem[0])
 }
