@@ -29,6 +29,7 @@ main :: proc() {
 		fmt.eprintln("Could not load the llama.cpp dynamic library (not installed?)")
 		return
 	}
+	readline_init()
 
 	log.debug("llama.load_library() ok")
 
@@ -174,29 +175,15 @@ main :: proc() {
 
 	    // now we are past the first response (for the prompt)
 	    // the user must provide further message
-	    user_input, ok := read_line()
-	    if !ok {
-	    	fmt.eprintln("Error reading user input")
-	    	return
-	    }
+	    user_input := read_line("user: ")
 	    if len(user_input) == 0 {
 	    	return
 	    }
 
-	    append_message_to_chat_history(&state, "user", user_input)
+	    append_message_to_chat_history(&state, "user", string(user_input))
 
 	    state.prompt = llama.format_messages(chat_template, state.history[:])
 	}
-}
-
-read_line :: proc () -> (string, bool) {
-	buf: [2048]u8
-	fmt.print("\n> ")
-	bytes_read, err := os.read(os.stdin, buf[:])
-	if err != nil {
-		return "", false
-	}
-	return string(buf[:bytes_read]), true
 }
 
 append_message_to_chat_history :: proc(state: ^Client_State, role: string, content: string) {
