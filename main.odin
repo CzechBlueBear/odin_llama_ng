@@ -118,21 +118,12 @@ main :: proc() {
 	state.history = make([dynamic]llama.Chat_Message, 0, 8)
 	append_cstring_to_chat_history(&state, "prompt", state.prompt)
 
+    is_first := true
 	for {
-
-	    // allocate space and tokenize the prompt (first call to tokenize() determines the number of tokens,
-	    // the second call does the full tokenization)
-	    prompt_length := i32(len(state.prompt))
-	    is_first := true
-		n_prompt_tokens := -llama.tokenize(state.vocab, state.prompt, prompt_length, nil, 0, is_first, true)
-		prompt_tokens := make([]llama.Token, n_prompt_tokens)
+		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
 		defer delete(prompt_tokens)
-		if llama.tokenize(state.vocab, state.prompt, prompt_length, &prompt_tokens[0], n_prompt_tokens, is_first, true) < 0 {
-			fmt.eprintln("Failed to tokenize prompt")
-			return
-		}
 
-	    // prepare a batch for the prompt, then decode tokens until the end of generation
+	    // prepare a batch for decoding
 	    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
 	    response := strings.builder_make()
 	    for {
@@ -141,7 +132,7 @@ main :: proc() {
 	        n_ctx := llama.n_ctx(state.ctx);
 	        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + 1;
 	        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
-	            fmt.eprintln("Context size exceeded")
+	            fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
 	            return
 	        }
 
@@ -173,8 +164,9 @@ main :: proc() {
 	        state.batch = llama.batch_get_one(&new_token_id, 1);
 	    }
 
-	    // now we are past the first response (for the prompt)
-	    // the user must provide further message
+	    append_message_to_chat_history(&state, "ai", strings.to_string(response))
+	    strings.builder_destroy(&response)
+
 	    user_input := read_line("user: ")
 	    if len(user_input) == 0 {
 	    	return

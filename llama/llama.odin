@@ -31,7 +31,7 @@ model_get_vocab: proc "c" (model: llama_model_ptr) -> llama_vocab_ptr
 init_from_model: proc "c" (model: llama_model_ptr, params: LLAMA_Context_Params) -> llama_context_ptr
 context_default_params: proc "c" () -> LLAMA_Context_Params
 token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t
-tokenize: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
+tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
 batch_get_one   : proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> llama_batch
 n_ctx           : proc "c" (ctx: llama_context_ptr) -> c.uint32_t
@@ -64,7 +64,7 @@ load_library :: proc () -> bool {
 	set_proc_address(&init_from_model, "llama_init_from_model")
 	set_proc_address(&context_default_params, "llama_context_default_params")
 	set_proc_address(&token_to_piece, "llama_token_to_piece")
-	set_proc_address(&tokenize, "llama_tokenize")
+	set_proc_address(&tokenize_raw, "llama_tokenize")
 	set_proc_address(&batch_get_one, "llama_batch_get_one")
 	set_proc_address(&n_ctx, "llama_n_ctx")
 	set_proc_address(&get_memory, "llama_get_memory")
@@ -111,4 +111,21 @@ format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> cstring
 		panic("Could not apply chat template (out of memory?)")
 	}
 	return cstring(&buf[0])
+}
+
+tokenize :: proc (vocab: llama_vocab_ptr, text: cstring, add_special: bool, parse_special: bool) -> [dynamic]Token
+{
+	text_length := i32(len(text))
+	tokens_needed := -tokenize_raw(vocab, text, text_length, nil, 0, add_special, parse_special)
+	if tokens_needed <= 0 {
+		panic("Failed to tokenize prompt (pass 1; mismatched vocabulary/model?)")
+	}
+
+	tokens: [dynamic]Token
+	resize_dynamic_array(&tokens, tokens_needed)
+	result := tokenize_raw(vocab, text, text_length, raw_data(tokens), i32(len(tokens)), add_special, parse_special)
+	if result < 0 {
+		panic("Failed to tokenize prompt (pass 2; mismatched vocabulary/model?)")
+	}
+	return tokens
 }
