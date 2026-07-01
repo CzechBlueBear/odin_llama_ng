@@ -12,7 +12,7 @@ import "llama"
 
 Client_State :: struct {
 	model_path: cstring,
-	prompt: cstring,
+	prompt: string,
 	history: [dynamic]llama.Chat_Message,
 	model: llama.llama_model_ptr,
 	vocab: llama.llama_vocab_ptr,
@@ -29,7 +29,7 @@ main :: proc() {
 		fmt.eprintln("Could not load the llama.cpp dynamic library (not installed?)")
 		return
 	}
-	readline_init()
+	//readline_init()	// FIXME: crashes later in readline() call
 
 	log.debug("llama.load_library() ok")
 
@@ -43,7 +43,7 @@ main :: proc() {
 			state.model_path = strings.unsafe_string_to_cstring(args[i])
 		}
 		else if len(state.prompt) == 0 {
-			state.prompt = strings.unsafe_string_to_cstring(args[i])
+			state.prompt = strings.clone(args[i])
 		}
 	}
 
@@ -53,8 +53,7 @@ main :: proc() {
 	}
 
 	if len(state.prompt) == 0 {
-		fmt.eprintln("Prompt for the LLM must be specified (as argument #2)")
-		return
+		// permissible; we will ask for prompt later
 	}
 
 	llama.backend_init()
@@ -79,7 +78,7 @@ main :: proc() {
 
 	state.model = llama.model_load_from_file(state.model_path, params)
 	if state.model == nil {
-		fmt.eprintfln("Could not load llama model (bad path?)", state.model_path)
+		fmt.eprintfln("Could not load llama model (bad path?): %s", state.model_path)
 		return
 	}
 
@@ -115,17 +114,31 @@ main :: proc() {
 		return
 	}
 
-	state.history = make([dynamic]llama.Chat_Message, 0, 8)
-	append_cstring_to_chat_history(&state, "prompt", state.prompt)
+	//state.history = make([dynamic]llama.Chat_Message, 0, 8)
+
+	if len(state.prompt) == 0 {
+		state.prompt = read_line("prompt: ")
+		if len(state.prompt) == 0 {
+			fmt.eprintln("Prompt must be specified")
+			return
+		}
+	}
+
+	append_message_to_chat_history(&state, "prompt", state.prompt)
 
     is_first := true
 	for {
+
 		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
 		defer delete(prompt_tokens)
 
-	    // prepare a batch for decoding
+		is_first = false
+
+	    // prepare a batch for response generation
 	    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
 	    response := strings.builder_make()
+
+	    // evaluate the batch by calling decode(), each call generates a token
 	    for {
 
 	        // check if we have enough space in the context to evaluate this batch
@@ -174,6 +187,8 @@ main :: proc() {
 
 	    append_message_to_chat_history(&state, "user", string(user_input))
 
+	    // take everything in the current conversation, reformat it according to
+	    // model's recommended format, and prepare for the next round
 	    state.prompt = llama.format_messages(chat_template, state.history[:])
 	}
 }
@@ -183,22 +198,4 @@ append_message_to_chat_history :: proc(state: ^Client_State, role: string, conte
 		role = strings.clone_to_cstring(role),
 		content = strings.clone_to_cstring(content)
 	})
-}
-
-append_cstring_to_chat_history :: proc(state: ^Client_State, role: cstring, content: cstring) {
-	append_elem(&state.history, llama.Chat_Message {
-		role = clone_cstring(role),
-		content = clone_cstring(content)
-	})
-}
-
-/// Makes a dynamically allocated copy of the given C-style string.
-clone_cstring :: proc(s: cstring) -> cstring {
-	length := len(s)
-	mem, err := runtime.mem_alloc(length + 1)
-	if err != nil {
-		panic("Out of memory")
-	}
-	runtime.mem_copy(rawptr(&mem[0]), rawptr(s), length)
-	return cstring(&mem[0])
 }

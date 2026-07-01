@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:dynlib"
 import "core:strings"
+import "core:terminal/ansi"
 import "base:runtime"
 
 MAX_LINE_BUFFER :: 2048
@@ -51,13 +52,22 @@ readline_init :: proc() {
 // }
 
 /// Emergency barebones implementation of readline().
-/// Reads a line from the terminal, blocking as needed, and returns it as a string.
+/// Reads a line from the terminal, blocking as needed, and returns it
+/// as a (newly allocated) string.
 read_line :: proc (prompt: string) -> string {
+
+	// set alternative color to visually separate the input from other text
+	fmt.print(ansi.CSI + ansi.FG_GREEN + ansi.SGR + "\n", prompt)
+	defer fmt.print(ansi.CSI + ansi.RESET + ansi.SGR)
+
 	buf: [MAX_LINE_BUFFER]u8
-	fmt.printf("\n%s", prompt)
 	bytes_read, err := os.read(os.stdin, buf[:])
 	if err != nil {
 		panic("Error reading from terminal")
 	}
+	if bytes_read >= MAX_LINE_BUFFER {
+		panic("Excess input from terminal (line too long?)")
+	}
+
 	return string(buf[:bytes_read])
 }

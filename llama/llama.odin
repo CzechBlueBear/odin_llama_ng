@@ -99,33 +99,46 @@ token_to_string :: proc (vocab: llama_vocab_ptr, token: Token) -> (string, bool)
 	return token_text, true
 }
 
-format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> cstring
+format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> string
 {
+	// dry run to see how much space we will need (in bytes), plus 1 for the terminating zero
 	needed_length := chat_apply_template(tmpl, &messages[0], len(messages), true, nil, 0);
 	buf, err := runtime.mem_alloc(int(needed_length) + 1)
 	if err != nil {
-		panic("Out of memory")
+		panic("Out of memory when allocating formatting buffer")
 	}
+
+	// do the template application in real
 	result := chat_apply_template(tmpl, &messages[0], len(messages), true, &buf[0], needed_length);
 	if result < 0 {
 		panic("Could not apply chat template (out of memory?)")
 	}
-	return cstring(&buf[0])
+
+	// transfer ownership of buf into a new string, and return it
+	return string(buf)
 }
 
-tokenize :: proc (vocab: llama_vocab_ptr, text: cstring, add_special: bool, parse_special: bool) -> [dynamic]Token
+tokenize :: proc (vocab: llama_vocab_ptr, text: string, add_special: bool, parse_special: bool) -> [dynamic]Token
 {
+	// convert to cstring; we can't be sure it ends with 0 so we must allocate
+	text_cstring := strings.clone_to_cstring(text)
+	defer delete(text_cstring)
+
 	text_length := i32(len(text))
-	tokens_needed := -tokenize_raw(vocab, text, text_length, nil, 0, add_special, parse_special)
+
+	// first call tokenize_raw() in a dry-run mode to determine how many tokens we will need
+	tokens_needed := -tokenize_raw(vocab, text_cstring, text_length, nil, 0, add_special, parse_special)
 	if tokens_needed <= 0 {
 		panic("Failed to tokenize prompt (pass 1; mismatched vocabulary/model?)")
 	}
 
+	// allocate sufficient space and do the tokenization for real
 	tokens: [dynamic]Token
 	resize_dynamic_array(&tokens, tokens_needed)
-	result := tokenize_raw(vocab, text, text_length, raw_data(tokens), i32(len(tokens)), add_special, parse_special)
+	result := tokenize_raw(vocab, text_cstring, text_length, raw_data(tokens), i32(len(tokens)), add_special, parse_special)
 	if result < 0 {
 		panic("Failed to tokenize prompt (pass 2; mismatched vocabulary/model?)")
 	}
+
 	return tokens
 }
