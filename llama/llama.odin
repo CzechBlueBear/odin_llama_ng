@@ -118,6 +118,13 @@ format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> string
 	return string(buf)
 }
 
+/// Tokenizes the text using the given vocabulary and returns it as a dynamic array of tokens.
+/// Params:
+/// vocab - Vocabulary to use (must match the model, naturally).
+/// token - The token to decode.
+/// add_special - Allow to add BOS and EOS tokens if model is configured to do so.
+/// parse_special - Allow tokenizing special and/or control tokens which otherwise are not exposed and treated
+///                 as plaintext. Does not insert a leading space.
 tokenize :: proc (vocab: llama_vocab_ptr, text: string, add_special: bool, parse_special: bool) -> [dynamic]Token
 {
 	// convert to cstring; we can't be sure it ends with 0 so we must allocate

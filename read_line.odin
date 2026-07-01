@@ -57,7 +57,7 @@ readline_init :: proc() {
 read_line :: proc (prompt: string) -> string {
 
 	// set alternative color to visually separate the input from other text
-	fmt.print(ansi.CSI + ansi.FG_GREEN + ansi.SGR + "\n", prompt)
+	fmt.print(ansi.CSI + ansi.FG_GREEN + ansi.SGR, prompt)
 	defer fmt.print(ansi.CSI + ansi.RESET + ansi.SGR)
 
 	buf: [MAX_LINE_BUFFER]u8

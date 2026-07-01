@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:c"
 import "core:log"
 import "core:io"
+import "core:terminal/ansi"
 import "base:runtime"
 import "llama"
 
@@ -138,17 +139,23 @@ main :: proc() {
 	    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
 	    response := strings.builder_make()
 
+        // check if we have enough space in the context to evaluate this batch
+        n_ctx := llama.n_ctx(state.ctx);
+        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
+        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
+            fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
+            return
+        }
+
+		// print current context usage
+		fmt.printfln(ansi.CSI + ansi.FG_RED + ansi.SGR +
+			"\n%d(+%d)/%d\n" + ansi.CSI + ansi.RESET + ansi.SGR,
+			n_ctx_used, state.batch.n_tokens, n_ctx)
+
 	    // evaluate the batch by calling decode(), each call generates a token
 	    for {
 
-	        // check if we have enough space in the context to evaluate this batch
-	        n_ctx := llama.n_ctx(state.ctx);
-	        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + 1;
-	        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
-	            fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
-	            return
-	        }
-
+			// sample from the logits of the last token in the batch
 	        ret := llama.decode(state.ctx, state.batch);
 	        if ret != 0 {
 	        	fmt.eprintln("Failed decoding model reply")
@@ -176,6 +183,11 @@ main :: proc() {
 	        // prepare the next batch with the sampled token
 	        state.batch = llama.batch_get_one(&new_token_id, 1);
 	    }
+
+		// print current context usage (again)
+		fmt.printfln(ansi.CSI + ansi.FG_RED + ansi.SGR +
+			"\n%d(+%d)/%d\n" + ansi.CSI + ansi.RESET + ansi.SGR,
+			n_ctx_used, state.batch.n_tokens, n_ctx)
 
 	    append_message_to_chat_history(&state, "ai", strings.to_string(response))
 	    strings.builder_destroy(&response)
