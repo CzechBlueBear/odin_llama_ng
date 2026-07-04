@@ -28,24 +28,25 @@ backend_init: proc "c" ();
 backend_free: proc "c" ();
 model_load_from_file: proc "c" (model_path: cstring, model_params: Model_Params) -> llama_model_ptr
 model_get_vocab: proc "c" (model: llama_model_ptr) -> llama_vocab_ptr
-init_from_model: proc "c" (model: llama_model_ptr, params: LLAMA_Context_Params) -> llama_context_ptr
-context_default_params: proc "c" () -> LLAMA_Context_Params
+init_from_model: proc "c" (model: llama_model_ptr, params: Context_Params) -> llama_context_ptr
+context_default_params: proc "c" () -> Context_Params
 token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t
 tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
-batch_get_one   : proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> llama_batch
+batch_get_one   : proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> Batch
 n_ctx           : proc "c" (ctx: llama_context_ptr) -> c.uint32_t
 get_memory      : proc "c" (ctx: llama_context_ptr) -> llama_memory_ptr
 memory_seq_pos_max : proc "c" (mem: llama_memory_ptr, seq_id: llama_seq_id) -> llama_pos
-decode          : proc "c" (ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t
-sampler_sample  : proc "c" (smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token
+decode          : proc "c" (ctx: llama_context_ptr, batch: Batch) -> c.int32_t
+sampler_sample  : proc "c" (smpl: ^Sampler, ctx: llama_context_ptr, idx: c.int32_t) -> Token
 vocab_is_eog    : proc "c" (vocab: llama_vocab_ptr, token: Token) -> bool
+
 sampler_chain_default_params : proc "c" () -> llama_sampler_chain_params
-sampler_chain_init : proc "c" (params: llama_sampler_chain_params) -> llama_sampler_ptr
-sampler_init_min_p : proc "c" (min_p: c.float, min_keep: c.size_t) -> llama_sampler_ptr
-sampler_init_temp : proc "c" (value: c.float) -> llama_sampler_ptr
-sampler_init_dist : proc "c" (seed: c.uint32_t) -> llama_sampler_ptr
-sampler_chain_add : proc "c" (chain: llama_sampler_ptr, sampler: llama_sampler_ptr)
+sampler_chain_init : proc "c" (params: llama_sampler_chain_params) -> ^Sampler
+sampler_init_min_p : proc "c" (min_p: c.float, min_keep: c.size_t) -> ^Sampler
+sampler_init_temp : proc "c" (value: c.float) -> ^Sampler
+sampler_init_dist : proc "c" (seed: c.uint32_t) -> ^Sampler
+sampler_chain_add : proc "c" (chain: ^Sampler, sampler: ^Sampler)
 
 chat_apply_template : proc "c" (tmpl: cstring, chat: ^Chat_Message, n_msg: c.size_t, add_assistant: bool, buf: ^u8, length: c.int32_t) -> c.int32_t
 model_chat_template : proc "c" (model: llama_model_ptr, name: cstring) -> cstring

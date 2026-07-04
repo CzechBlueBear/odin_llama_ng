@@ -15,11 +15,8 @@ GGML_MAX_OP_PARAMS :: 64
 gpt_params_ptr :: distinct rawptr
 
 // Some objects are better considered opaque and only handled with methods
-llama_model_params_ptr :: distinct rawptr
 llama_model_ptr :: distinct rawptr
-llama_context_params_ptr :: distinct rawptr
 llama_context_ptr :: distinct rawptr
-llama_sampler_ptr :: distinct rawptr
 llama_vocab_ptr :: distinct rawptr
 llama_memory_ptr :: distinct rawptr  // llama_memory_t, which is (llama_memory_i*)
 
@@ -41,7 +38,7 @@ llama_sampler_chain_params :: struct {
 // - seq_id : the sequence to which the respective token belongs
 // - logits : if zero, the logits (and/or the embeddings) for the respective token will not be output
 //
-llama_batch :: struct {
+Batch :: struct {
 	n_tokens:   c.int32_t,
 	token:      [^]Token,
 	embd:       [^]c.float,
@@ -417,42 +414,42 @@ Sampler_Data :: struct {
 	candidates: ^GGML_Tensor
 }
 
-LLAMA_Sampler_Interface :: struct {
-	name:	proc "c" (smpl: ^LLAMA_Sampler) -> cstring,                 // can be NULL
-	accept: proc "c" (smpl: ^LLAMA_Sampler, token: Token),              // can be NULL
-	apply:  proc "c" (smpl: ^LLAMA_Sampler, cur_p: ^Token_Data_Array),  // required
-	reset:  proc "c" (smpl: ^LLAMA_Sampler),                            // can be NULL
-	clone:  proc "c" (smpl: ^LLAMA_Sampler) -> ^LLAMA_Sampler,          // can be NULL if ctx is NULL
-	free:   proc "c" (smpl: ^LLAMA_Sampler),                            // can be NULL if ctx is NULL
+Sampler_Interface :: struct {
+	name:	proc "c" (smpl: ^Sampler) -> cstring,                 // can be NULL
+	accept: proc "c" (smpl: ^Sampler, token: Token),              // can be NULL
+	apply:  proc "c" (smpl: ^Sampler, cur_p: ^Token_Data_Array),  // required
+	reset:  proc "c" (smpl: ^Sampler),                            // can be NULL
+	clone:  proc "c" (smpl: ^Sampler) -> ^Sampler,          // can be NULL if ctx is NULL
+	free:   proc "c" (smpl: ^Sampler),                            // can be NULL if ctx is NULL
 
     // [EXPERIMENTAL]
     // backend sampling interface:
 
     // return true if the backend supports all ops needed by the sampler
     // note: call once per sampler
-    backend_init:    proc "c" (smpl: ^LLAMA_Sampler, buft: rawptr /* ggml_backend_buffer_type_t */),
+    backend_init:    proc "c" (smpl: ^Sampler, buft: rawptr /* ggml_backend_buffer_type_t */),
 
     // call after .backend_apply()
-    backend_accept:  proc "c" (smpl: ^LLAMA_Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, selected_token: ^GGML_Tensor),
+    backend_accept:  proc "c" (smpl: ^Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, selected_token: ^GGML_Tensor),
 
     // call after .backend_init()
-    backend_apply:   proc "c" (smpl: ^LLAMA_Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, data: ^Sampler_Data),
+    backend_apply:   proc "c" (smpl: ^Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, data: ^Sampler_Data),
 
     // called before graph execution to set inputs for the current ubatch
-    backend_set_input:    proc "c" (smpl: ^LLAMA_Sampler)
+    backend_set_input:    proc "c" (smpl: ^Sampler)
 }
 
-LLAMA_Sampler :: struct {
-    iface: ^LLAMA_Sampler_Interface,
+Sampler :: struct {
+    iface: ^Sampler_Interface,
     ctx: rawptr
 }
 
-LLAMA_Sampler_Seq_Config :: struct {
+Sampler_Seq_Config :: struct {
 	seq_id: llama_seq_id,
-	sampler: ^LLAMA_Sampler,
+	sampler: ^Sampler,
 }
 
-LLAMA_Context_Params :: struct {
+Context_Params :: struct {
     n_ctx: c.uint32_t,            // text context, 0 = from model
     n_batch: c.uint32_t,          // logical maximum batch size that can be submitted to llama_decode
     n_ubatch: c.uint32_t,         // physical maximum batch size

@@ -18,8 +18,8 @@ Client_State :: struct {
 	model: llama.llama_model_ptr,
 	vocab: llama.llama_vocab_ptr,
 	ctx: llama.llama_context_ptr,
-	sampler: llama.llama_sampler_ptr,
-	batch: llama.llama_batch,
+	sampler: ^llama.Sampler,
+	batch: llama.Batch,
 }
 
 deinit_client_state :: proc (state: Client_State) {
@@ -125,24 +125,34 @@ main :: proc() {
 		}
 	}
 
+	// store the initial prompt (just "prompt" in LLM user parlance)
 	append_message_to_chat_history(&state, "prompt", state.prompt)
 
     is_first := true
 	for {
 
+		// convert prompt into tokens
 		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
 		defer delete(prompt_tokens)
 
 		is_first = false
 
-	    // prepare a batch for response generation
-	    state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
-	    response := strings.builder_make()
+		// prepare a batch for response generation
+		state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
 
-        // check if we have enough space in the context to evaluate this batch
-        n_ctx := llama.n_ctx(state.ctx);
+		response := strings.builder_make()
+
+		// check if we have enough space in the context to evaluate this batch
+		// note that the context contains the prompt and the response is written after it
+		// so in order to fit, it must accomodate both
+
+		// maximum capacity of the context
+		n_ctx := llama.n_ctx(state.ctx)
+
+        // how many tokens we consume for the prompt
         n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
-        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > llama.llama_pos(n_ctx) {
+
+        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > cast(llama.llama_pos)n_ctx {
             fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
             return
         }
