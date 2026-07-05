@@ -1,16 +1,13 @@
 package llama
+
 import "core:c"
+import "ggml"
 
 main :: proc() {
 }
 
 MAX_DEVICES :: 16
 DEFAULT_SEED :: 0xFFFFFFFF
-
-GGML_MAX_SRC :: 10
-GGML_MAX_NAME :: 64
-GGML_MAX_DIMS :: 4
-GGML_MAX_OP_PARAMS :: 64
 
 gpt_params_ptr :: distinct rawptr
 
@@ -24,19 +21,21 @@ Token :: distinct c.int32_t
 llama_pos :: distinct c.int32_t
 llama_seq_id :: distinct c.int32_t
 
-llama_sampler_chain_params :: struct {
-	no_perf: c.bool,
-}
-
-// Input data for llama_decode
+// Input data for llama_encode/llama_decode
 // A llama_batch object can contain input about one or many sequences
 // The provided arrays (i.e. token, embd, pos, etc.) must have size of n_tokens
 //
 // - token  : the token ids of the input (used when embd is NULL)
 // - embd   : token embeddings (i.e. float vector of size n_embd) (used when token is NULL)
 // - pos    : the positions of the respective token in the sequence
+//            (if set to NULL, the token position will be tracked automatically by llama_encode/llama_decode)
 // - seq_id : the sequence to which the respective token belongs
+//            (if set to NULL, the sequence ID will be assumed to be 0)
 // - logits : if zero, the logits (and/or the embeddings) for the respective token will not be output
+//            (if set to NULL:
+//               - if embeddings: all tokens are output
+//               - if not:        only the last token is output
+//            )
 //
 Batch :: struct {
 	n_tokens:   c.int32_t,
@@ -56,47 +55,16 @@ Tokens :: struct {
 	tokens: [^]Token,
 }
 
-
-llama_example :: enum c.int {
-	LLAMA_EXAMPLE_COMMON,
-	LLAMA_EXAMPLE_SPECULATIVE,
-	LLAMA_EXAMPLE_MAIN,
-	LLAMA_EXAMPLE_INFILL,
-	LLAMA_EXAMPLE_EMBEDDING,
-	LLAMA_EXAMPLE_PERPLEXITY,
-	LLAMA_EXAMPLE_RETRIEVAL,
-	LLAMA_EXAMPLE_PASSKEY,
-	LLAMA_EXAMPLE_IMATRIX,
-	LLAMA_EXAMPLE_BENCH,
-	LLAMA_EXAMPLE_SERVER,
-	LLAMA_EXAMPLE_CVECTOR_GENERATOR,
-	LLAMA_EXAMPLE_EXPORT_LORA,
-	LLAMA_EXAMPLE_LLAVA,
-	LLAMA_EXAMPLE_LOOKUP,
-	LLAMA_EXAMPLE_PARALLEL,
-	LLAMA_EXAMPLE_COUNT,
+Perf_Type :: enum c.int {
+	Context = 0,
+    Sampler_Chain = 1,
 }
 
-// numa strategies
-ggml_numa_strategy :: enum c.int {
-	GGML_NUMA_STRATEGY_DISABLED = 0,
-	GGML_NUMA_STRATEGY_DISTRIBUTE = 1,
-	GGML_NUMA_STRATEGY_ISOLATE = 2,
-	GGML_NUMA_STRATEGY_NUMACTL = 3,
-	GGML_NUMA_STRATEGY_MIRROR = 4,
-	GGML_NUMA_STRATEGY_COUNT,
-}
-
-llama_perf_type :: enum c.int {
-	LLAMA_PERF_TYPE_CONTEXT       = 0,
-	LLAMA_PERF_TYPE_SAMPLER_CHAIN = 1,
-}
-
-llama_split_mode :: enum c.int {
-    NONE   = 0, // single GPU
-    LAYER  = 1, // split layers and KV across GPUs
-    ROW    = 2, // split layers and KV across GPUs, use tensor parallelism if supported
-    TENSOR = 3,
+Split_Mode :: enum c.int {
+    None = 0,   // single GPU
+    Layer = 1,  // split layers and KV across GPUs
+    Row = 2,    // split layers and KV across GPUs, use tensor parallelism if supported
+    Tensor = 3
 }
 
 // ggml_backend_device :: struct {
@@ -115,8 +83,11 @@ Model_Params :: struct {
     // NULL-terminated list of buffer types to use for tensors that match a pattern
     tensor_buft_overrides: [^]rawptr, // [^]llama_model_tensor_buft_override,
 
-    n_gpu_layers: c.int32_t,       // number of layers to store in VRAM, a negative value means all layers
-    split_mode: llama_split_mode,  // how to split the model across multiple GPUs
+    // number of layers to store in VRAM, a negative value means all layers
+    n_gpu_layers: c.int32_t,
+
+    // how to split the model across multiple GPUs
+    split_mode: Split_Mode,
 
     // the GPU that is used for the entire model when split_mode is LLAMA_SPLIT_MODE_NONE
     main_gpu: c.int32_t,
@@ -164,230 +135,15 @@ Pooling_Type :: enum c.int32_t {
 }
 
 Attention_Type :: enum c.int32_t {
-    UNSPECIFIED = -1,
-    CAUSAL      = 0,
-    NON_CAUSAL  = 1,
+    Unspecified = -1,
+    Causal = 0,
+    Non_Causal = 1,
 }
 
 Flash_Attention_Type :: enum c.int32_t {
-	AUTO     = -1,
-	DISABLED = 0,
-	ENABLED  = 1,
-}
-
-GGML_Type :: enum c.int32_t {
-    GGML_TYPE_F32     = 0,
-    GGML_TYPE_F16     = 1,
-    GGML_TYPE_Q4_0    = 2,
-    GGML_TYPE_Q4_1    = 3,
-    // GGML_TYPE_Q4_2 = 4, support has been removed
-    // GGML_TYPE_Q4_3 = 5, support has been removed
-    GGML_TYPE_Q5_0    = 6,
-    GGML_TYPE_Q5_1    = 7,
-    GGML_TYPE_Q8_0    = 8,
-    GGML_TYPE_Q8_1    = 9,
-    GGML_TYPE_Q2_K    = 10,
-    GGML_TYPE_Q3_K    = 11,
-    GGML_TYPE_Q4_K    = 12,
-    GGML_TYPE_Q5_K    = 13,
-    GGML_TYPE_Q6_K    = 14,
-    GGML_TYPE_Q8_K    = 15,
-    GGML_TYPE_IQ2_XXS = 16,
-    GGML_TYPE_IQ2_XS  = 17,
-    GGML_TYPE_IQ3_XXS = 18,
-    GGML_TYPE_IQ1_S   = 19,
-    GGML_TYPE_IQ4_NL  = 20,
-    GGML_TYPE_IQ3_S   = 21,
-    GGML_TYPE_IQ2_S   = 22,
-    GGML_TYPE_IQ4_XS  = 23,
-    GGML_TYPE_I8      = 24,
-    GGML_TYPE_I16     = 25,
-    GGML_TYPE_I32     = 26,
-    GGML_TYPE_I64     = 27,
-    GGML_TYPE_F64     = 28,
-    GGML_TYPE_IQ1_M   = 29,
-    GGML_TYPE_BF16    = 30,
-    // GGML_TYPE_Q4_0_4_4 = 31, support has been removed from gguf files
-    // GGML_TYPE_Q4_0_4_8 = 32,
-    // GGML_TYPE_Q4_0_8_8 = 33,
-    GGML_TYPE_TQ1_0   = 34,
-    GGML_TYPE_TQ2_0   = 35,
-    // GGML_TYPE_IQ4_NL_4_4 = 36,
-    // GGML_TYPE_IQ4_NL_4_8 = 37,
-    // GGML_TYPE_IQ4_NL_8_8 = 38,
-    GGML_TYPE_MXFP4   = 39, // MXFP4 (1 block)
-    GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
-    GGML_TYPE_Q1_0    = 41,
-}
-
-GGML_Context :: struct {
-	mem_size:   c.size_t,
-	mem_buffer: rawptr,
-	mem_buffer_owned:   bool,
-	no_alloc:   bool,
-	n_objects:  c.int,
-	objects_begin:    rawptr, // struct ggml_object*
-	objects_end:      rawptr, // struct ggml_object*
-}
-
-GGML_Op :: enum c.int {
-    NONE = 0,
-	DUP,
-    ADD,
-    ADD_ID,
-    ADD1,
-    ACC,
-    SUB,
-    MUL,
-    DIV,
-    SQR,
-    SQRT,
-    LOG,
-    SIN,
-    COS,
-    SUM,
-    SUM_ROWS,
-    CUMSUM,
-    MEAN,
-    ARGMAX,
-    COUNT_EQUAL,
-    REPEAT,
-    REPEAT_BACK,
-    CONCAT,
-    SILU_BACK,
-    NORM, // normalize
-    RMS_NORM,
-    RMS_NORM_BACK,
-    GROUP_NORM,
-    L2_NORM,
-	MUL_MAT,
-    MUL_MAT_ID,
-    OUT_PROD,
-	SCALE,
-    SET,
-    CPY,
-    CONT,
-    RESHAPE,
-    VIEW,
-    PERMUTE,
-    TRANSPOSE,
-    GET_ROWS,
-    GET_ROWS_BACK,
-    SET_ROWS,
-    DIAG,
-    DIAG_MASK_INF,
-    DIAG_MASK_ZERO,
-    SOFT_MAX,
-    SOFT_MAX_BACK,
-    ROPE,
-    ROPE_BACK,
-    CLAMP,
-    CONV_TRANSPOSE_1D,
-    IM2COL,
-    IM2COL_BACK,
-    IM2COL_3D,
-    CONV_2D,
-    CONV_3D,
-    CONV_2D_DW,
-    CONV_TRANSPOSE_2D,
-    POOL_1D,
-    POOL_2D,
-    POOL_2D_BACK,
-    UPSCALE,
-    PAD,
-    PAD_REFLECT_1D,
-    ROLL,
-    ARANGE,
-    TIMESTEP_EMBEDDING,
-    ARGSORT,
-    TOP_K,
-    LEAKY_RELU,
-    TRI,
-    FILL,
-	FLASH_ATTN_EXT,
-    FLASH_ATTN_BACK,
-    SSM_CONV,
-    SSM_SCAN,
-    WIN_PART,
-    WIN_UNPART,
-    GET_REL_POS,
-    ADD_REL_POS,
-    RWKV_WKV6,
-    GATED_LINEAR_ATTN,
-    RWKV_WKV7,
-    SOLVE_TRI,
-    GATED_DELTA_NET,
-
-    UNARY,
-	MAP_CUSTOM1,
-    MAP_CUSTOM2,
-    MAP_CUSTOM3,
-	CUSTOM,
-	CROSS_ENTROPY_LOSS,
-    CROSS_ENTROPY_LOSS_BACK,
-    OPT_STEP_ADAMW,
-    OPT_STEP_SGD,
-	GLU,
-	COUNT,
-}
-
-// n-dimensional tensor
-GGML_Tensor :: struct {
-	type: GGML_Type,
-	buffer: rawptr,            // ^ggml_backend_buffer
-
-    ne: [GGML_MAX_DIMS]c.int64_t,	// number of elements
-    nb: [GGML_MAX_DIMS]c.size_t,	// stride in bytes:
-                               // nb[0] = ggml_type_size(type)
-                               // nb[1] = nb[0]   * (ne[0] / ggml_blck_size(type)) + padding
-                               // nb[i] = nb[i-1] * ne[i-1]
-
-    // compute data
-    op: GGML_Op,
-
-    // op params - allocated as int32_t for alignment
-    op_params: [GGML_MAX_OP_PARAMS / size_of(c.int32_t)]c.int32_t,
-
-    flags: c.int32_t,
-
-    src: [GGML_MAX_SRC]^GGML_Tensor,
-
-    // source tensor and offset for views
-    view_src: ^GGML_Tensor,
-    view_offs: c.size_t,
-
-    data: rawptr,
-
-    name: [GGML_MAX_NAME]c.char,
-
-    extra: rawptr,
-
-    padding: [8]c.char,
-};
-
-GGML_Cgraph_Eval_Order :: enum c.int {
-    LEFT_TO_RIGHT = 0,
-    RIGHT_TO_LEFT,
-    COUNT
-}
-
-GGML_Cgraph :: struct {
-	size:    c.int,      // maximum number of nodes/leafs/grads/grad_accs
-	n_nodes: c.int,      // number of nodes currently in use
-	n_leafs: c.int,      // number of leafs currently in use
-
-	nodes:   ^^GGML_Tensor,   // tensors with data that can change if the graph is evaluated
-	grads:   ^^GGML_Tensor,   // the outputs of these tensors are the gradients of the nodes
-	grad_accs: ^^GGML_Tensor, // accumulators for node gradients
-	leafs:   ^^GGML_Tensor,   // tensors with constant data
-	use_counts: c.int32_t, // number of uses of each tensor, indexed by hash table slot
-
-	visited_hash_set:  rawptr, //^GGML_Hash_Set,
-	order:    GGML_Cgraph_Eval_Order,
-
-    // an optional identifier that can be utilized to recognize same graphs if two non-zero values match
-    // a value of 0 means it is not set and should be ignored
-	uid: c.uint64_t,
+    Auto = -1,
+    Disabled = 0,
+    Enabled = 1,
 }
 
 // TODO: simplify (https://github.com/ggml-org/llama.cpp/pull/9294#pullrequestreview-2286561979)
@@ -408,10 +164,10 @@ Token_Data_Array :: struct {	// llama_token_data_array
 }
 
 Sampler_Data :: struct {
-	logits:    ^GGML_Tensor,
-	probs:     ^GGML_Tensor,
-	sampled:   ^GGML_Tensor,
-	candidates: ^GGML_Tensor
+	logits:    ^ggml.Tensor,
+	probs:     ^ggml.Tensor,
+	sampled:   ^ggml.Tensor,
+	candidates: ^ggml.Tensor
 }
 
 Sampler_Interface :: struct {
@@ -430,13 +186,17 @@ Sampler_Interface :: struct {
     backend_init:    proc "c" (smpl: ^Sampler, buft: rawptr /* ggml_backend_buffer_type_t */),
 
     // call after .backend_apply()
-    backend_accept:  proc "c" (smpl: ^Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, selected_token: ^GGML_Tensor),
+    backend_accept:  proc "c" (smpl: ^Sampler, ctx: ^ggml.Context, gf: ^ggml.Cgraph, selected_token: ^ggml.Tensor),
 
     // call after .backend_init()
-    backend_apply:   proc "c" (smpl: ^Sampler, ctx: ^GGML_Context, gf: ^GGML_Cgraph, data: ^Sampler_Data),
+    backend_apply:   proc "c" (smpl: ^Sampler, ctx: ^ggml.Context, gf: ^ggml.Cgraph, data: ^Sampler_Data),
 
     // called before graph execution to set inputs for the current ubatch
     backend_set_input:    proc "c" (smpl: ^Sampler)
+}
+
+Sampler_Chain_Params :: struct {
+    no_perf: bool,  // whether to measure performance timings
 }
 
 Sampler :: struct {
@@ -472,11 +232,11 @@ Context_Params :: struct {
     yarn_orig_ctx: c.uint32_t, // YaRN original context size
     defrag_thold: c.float,     // [DEPRECATED] defragment the KV cache if holes/size > thold, <= 0 disabled (default)
 
-    cb_eval:      proc "c" (tensor: rawptr /* ^ggml_tensor */, ask: bool, user_data: rawptr) -> bool,
+    cb_eval:      proc "c" (tensor: ^ggml.Tensor, ask: bool, user_data: rawptr) -> bool,
     cb_eval_user_data: rawptr,
 
-    type_k: GGML_Type,         // data type for K cache [EXPERIMENTAL]
-    type_v: GGML_Type,         // data type for V cache [EXPERIMENTAL]
+    type_k: ggml.Type,         // data type for K cache [EXPERIMENTAL]
+    type_v: ggml.Type,         // data type for V cache [EXPERIMENTAL]
 
     // Abort callback
     // if it returns true, execution of llama_decode() will be aborted
@@ -506,67 +266,4 @@ Context_Params :: struct {
 Chat_Message :: struct {
     role: cstring,
     content: cstring
-}
-
-@(default_calling_convention = "c")
-foreign {
-	// lpp_print_usage :: proc(argc: c.int, argv: ^^c.char) ---
-
-	// lpp_make_gpt_params_ptr :: proc() -> gpt_params_ptr ---
-
-	// lpp_gpt_params_parse :: proc(argc: c.int, argv: ^^c.char, params: gpt_params_ptr, ex: llama_example) -> c.bool ---
-
-	// lpp_get_n_predict :: proc(params: gpt_params_ptr) -> c.int32_t ---
-	// lpp_get_n_gpu_layers :: proc(params: gpt_params_ptr) -> c.int32_t ---
-	// lpp_get_model :: proc(params: gpt_params_ptr) -> cstring ---
-	// lpp_get_prompt :: proc(params: gpt_params_ptr) -> cstring ---
-
-	// llama_backend_init :: proc() ---
-	// llama_backend_free :: proc() ---
-	// llama_load_model_from_file :: proc(model_path: cstring, model_params: ^llama_model_params) -> llama_model_ptr ---
-	// llama_free_model :: proc(model: llama_model_ptr) ---
-
-	// lpp_get_numa :: proc(params: gpt_params_ptr) -> ggml_numa_strategy ---
-
-	// llama_numa_init :: proc(numa: ggml_numa_strategy) ---
-
-	// lpp_llama_model_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_model_params_ptr ---
-
-	// lpp_llama_context_params_from_gpt_params :: proc(params: gpt_params_ptr) -> llama_context_params_ptr ---
-
-	// llp_llama_new_context_with_model :: proc(model: llama_model_ptr, ctx_params: llama_context_params_ptr) -> llama_context_ptr ---
-
-	// llama_sampler_chain_default_params :: proc() -> llama_sampler_chain_params ---
-
-	// llama_sampler_chain_init :: proc(params: llama_sampler_chain_params) -> llama_sampler_ptr ---
-
-	// llama_free :: proc(ctx: llama_context_ptr) ---
-
-	// llama_sampler_free :: proc(smpl: llama_sampler_ptr) ---
-
-	// llama_sampler_init_greedy :: proc() -> llama_sampler_ptr ---
-	// llama_sampler_chain_add :: proc(chain: llama_sampler_ptr, smpl: llama_sampler_ptr) ---
-
-	// lpp_llama_tokenize :: proc(ctx: llama_context_ptr, text: cstring, add_special: c.bool,  /*false*/parse_special: c.bool) -> Tokens ---
-
-	// lpp_llama_token_to_piece :: proc(ctx: llama_context_ptr, token: Token,  /*true*/special: c.bool) -> cstring ---
-
-	// llama_batch_init :: proc(n_tokens_alloc: c.int32_t, embd: c.int32_t, n_seq_max: c.int32_t) -> llama_batch ---
-	// llama_batch_free :: proc(batch: llama_batch) ---
-
-	// lpp_llama_batch_add :: proc(batch: ^llama_batch, id: Token, pos: llama_pos, seq_ids: [^]llama_seq_id, seq_ids_len: c.size_t, logits: c.bool) ---
-
-	// llama_decode :: proc(ctx: llama_context_ptr, batch: llama_batch) -> c.int32_t ---
-
-	// ggml_time_us :: proc() -> c.int64_t ---
-
-	// llama_n_ctx :: proc(ctx: llama_context_ptr) -> c.int ---
-
-	// llama_sampler_sample :: proc(smpl: llama_sampler_ptr, ctx: llama_context_ptr, idx: c.int32_t) -> Token ---
-
-	// Token_is_eog :: proc(model: llama_model_ptr, token: Token) -> c.bool ---
-
-	// lpp_llama_batch_clear :: proc(batch: ^llama_batch) ---
-
-	// llama_perf_print :: proc(ptr: rawptr, perf_type: llama_perf_type) ---
 }

@@ -41,8 +41,8 @@ decode          : proc "c" (ctx: llama_context_ptr, batch: Batch) -> c.int32_t
 sampler_sample  : proc "c" (smpl: ^Sampler, ctx: llama_context_ptr, idx: c.int32_t) -> Token
 vocab_is_eog    : proc "c" (vocab: llama_vocab_ptr, token: Token) -> bool
 
-sampler_chain_default_params : proc "c" () -> llama_sampler_chain_params
-sampler_chain_init : proc "c" (params: llama_sampler_chain_params) -> ^Sampler
+sampler_chain_default_params : proc "c" () -> Sampler_Chain_Params
+sampler_chain_init : proc "c" (params: Sampler_Chain_Params) -> ^Sampler
 sampler_init_min_p : proc "c" (min_p: c.float, min_keep: c.size_t) -> ^Sampler
 sampler_init_temp : proc "c" (value: c.float) -> ^Sampler
 sampler_init_dist : proc "c" (seed: c.uint32_t) -> ^Sampler

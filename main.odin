@@ -68,7 +68,7 @@ main :: proc() {
 		devices = nil,
 		tensor_buft_overrides = nil,
 		n_gpu_layers = -1,
-		split_mode = .NONE,
+		split_mode = llama.Split_Mode.None,
 		main_gpu = 0,
 		tensor_split = cast([^]f32)(&tensor_split),
 		progress_callback = nil,
@@ -77,6 +77,7 @@ main :: proc() {
 		use_mmap = true
 	}
 
+	// load the model
 	state.model = llama.model_load_from_file(state.model_path, params)
 	if state.model == nil {
 		fmt.eprintfln("Could not load llama model (bad path?): %s", state.model_path)
@@ -152,7 +153,7 @@ main :: proc() {
         // how many tokens we consume for the prompt
         n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
 
-        if n_ctx_used + llama.llama_pos(state.batch.n_tokens) > cast(llama.llama_pos)n_ctx {
+        if i32(n_ctx_used) + i32(state.batch.n_tokens) > i32(n_ctx) {
             fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
             return
         }
