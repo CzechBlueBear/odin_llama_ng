@@ -1,9 +1,12 @@
 # odin_llama_ng
-An attempt on a Odin language wrapper for llama.cpp.
+
+An attempt on a Odin language wrapper together with a basic inference utility for llama.cpp.
 
 Idea-wise, it builds on Yevhen K's work, which is available at https://github.com/yevhen-k/llama.odin.
 
-So far, it only runs a single query using a local LLM, and only works on Linux (due to reliance on the libllama library and dynamic loading; should be relatively easy to make it work on other platforms, though).
+So far, only a single mode is available: run ``./llama-odin-ng`` with a model path and a prompt string; after the inference, you can continue in a dialogue or just enter an empty line to finish.
+
+So far, it only works on Linux (due to reliance on the libllama library and dynamic loading; should be relatively easy to make it work on other platforms, though).
 
 ## Dynamic libllama library loading
 
