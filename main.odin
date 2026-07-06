@@ -62,20 +62,7 @@ main :: proc() {
 
 	log.debug("llama.backend_init() ok")
 
-	tensor_split := make([]f32, 2)
-	tensor_split[0] = 1.0
-	params := llama.Model_Params {
-		devices = nil,
-		tensor_buft_overrides = nil,
-		n_gpu_layers = -1,
-		split_mode = llama.Split_Mode.None,
-		main_gpu = 0,
-		tensor_split = cast([^]f32)(&tensor_split),
-		progress_callback = nil,
-		progress_callback_user_data = nil,
-		kv_overrides = nil,
-		use_mmap = true
-	}
+	params := llama.model_default_params()
 
 	// load the model
 	state.model = llama.model_load_from_file(state.model_path, params)

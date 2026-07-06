@@ -30,6 +30,7 @@ model_load_from_file: proc "c" (model_path: cstring, model_params: Model_Params)
 model_get_vocab: proc "c" (model: llama_model_ptr) -> llama_vocab_ptr
 init_from_model: proc "c" (model: llama_model_ptr, params: Context_Params) -> llama_context_ptr
 context_default_params: proc "c" () -> Context_Params
+model_default_params: proc "c" () -> Model_Params
 token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t
 tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
@@ -64,6 +65,7 @@ load_library :: proc () -> bool {
 	set_proc_address(&model_get_vocab, "llama_model_get_vocab")
 	set_proc_address(&init_from_model, "llama_init_from_model")
 	set_proc_address(&context_default_params, "llama_context_default_params")
+	set_proc_address(&model_default_params, "llama_model_default_params")
 	set_proc_address(&token_to_piece, "llama_token_to_piece")
 	set_proc_address(&tokenize_raw, "llama_tokenize")
 	set_proc_address(&batch_get_one, "llama_batch_get_one")
