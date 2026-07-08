@@ -29,8 +29,10 @@ backend_free: proc "c" ();
 model_load_from_file: proc "c" (model_path: cstring, model_params: Model_Params) -> llama_model_ptr
 model_get_vocab: proc "c" (model: llama_model_ptr) -> llama_vocab_ptr
 init_from_model: proc "c" (model: llama_model_ptr, params: Context_Params) -> llama_context_ptr
+
 context_default_params: proc "c" () -> Context_Params
 model_default_params: proc "c" () -> Model_Params
+
 token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t
 tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
@@ -87,18 +89,20 @@ load_library :: proc () -> bool {
 	return true
 }
 
+MAX_TOKEN_BUFFER :: 256
+
 /// Translates a token into a string.
 /// The returned string is newly allocated.
 token_to_string :: proc (vocab: llama_vocab_ptr, token: Token) -> (string, bool) {
 
-	buf: [256]u8
+	buf: [MAX_TOKEN_BUFFER]u8
 	n := token_to_piece(vocab, token, &buf[0], len(buf), 0, true)
 	if n < 0 {
 		fmt.eprintfln("Could not decode token (#%d)", token)
 		return "", false
 	}
 
-	token_text := strings.clone_from_bytes(buf[:])
+	token_text := strings.clone_from_cstring(cast(cstring)(&buf[0]))
 	return token_text, true
 }
 

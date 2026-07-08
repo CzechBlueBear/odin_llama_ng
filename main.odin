@@ -116,6 +116,7 @@ main :: proc() {
 	// store the initial prompt (just "prompt" in LLM user parlance)
 	append_message_to_chat_history(&state, "prompt", state.prompt)
 
+	response := strings.builder_make()
     is_first := true
 	for {
 
@@ -127,8 +128,6 @@ main :: proc() {
 
 		// prepare a batch for response generation
 		state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
-
-		response := strings.builder_make()
 
 		// check if we have enough space in the context to evaluate this batch
 		// note that the context contains the prompt and the response is written after it
@@ -144,11 +143,6 @@ main :: proc() {
             fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
             return
         }
-
-		// print current context usage
-		fmt.printfln(ansi.CSI + ansi.FG_RED + ansi.SGR +
-			"\n%d(+%d)/%d\n" + ansi.CSI + ansi.RESET + ansi.SGR,
-			n_ctx_used, state.batch.n_tokens, n_ctx)
 
 	    // evaluate the batch by calling decode(), each call generates a token
 	    for {
@@ -174,7 +168,15 @@ main :: proc() {
 				fmt.eprintfln("Error decoding token")
 				return;
 			}
-	        fmt.printf("%s", token_text)
+
+			// pending message
+			n_ctx := llama.n_ctx(state.ctx)
+			n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens))
+			fmt.printf(ansi.CSI + ansi.FG_BLUE + ansi.SGR +
+				"Thinking... %d(+%d)/%d\r" + ansi.CSI + ansi.RESET + ansi.SGR,
+				n_ctx_used, state.batch.n_tokens, n_ctx)
+
+			// append the token to the response
 	        strings.write_string(&response, token_text);
 	        delete(token_text)
 
@@ -182,30 +184,80 @@ main :: proc() {
 	        state.batch = llama.batch_get_one(&new_token_id, 1);
 	    }
 
-		// print current context usage (again)
-		fmt.printfln(ansi.CSI + ansi.FG_RED + ansi.SGR +
-			"\n%d(+%d)/%d\n" + ansi.CSI + ansi.RESET + ansi.SGR,
-			n_ctx_used, state.batch.n_tokens, n_ctx)
+	    fmt.println(strings.to_string(response))
 
-	    append_message_to_chat_history(&state, "ai", strings.to_string(response))
-	    strings.builder_destroy(&response)
+		append_message_to_chat_history(&state, "ai", strings.to_string(response))
+		strings.builder_reset(&response)
 
-	    user_input := read_line("user: ")
-	    if len(user_input) == 0 {
-	    	return
-	    }
+		user_input: string
+		for {
 
-	    append_message_to_chat_history(&state, "user", string(user_input))
+			// get user input (either another prompt, or a command)
+			user_input = read_line("user: ")
 
-	    // take everything in the current conversation, reformat it according to
-	    // model's recommended format, and prepare for the next round
-	    state.prompt = llama.format_messages(chat_template, state.history[:])
+			// commands start with '/'
+			if strings.starts_with(user_input, "/") {
+				if strings.starts_with(user_input, "/quit") {
+					return
+				}
+				else if strings.starts_with(user_input, "/record") {
+					write_chat_history_to_file("./chat_history.txt", state.history)
+					continue
+				}
+				else {
+					fmt.eprintln("Unrecognized command")
+				}
+			}
+			else {
+				break
+			}
+		}
+
+		append_message_to_chat_history(&state, "user", string(user_input))
+
+		// take everything in the current conversation, reformat it according to
+		// model's recommended format, and prepare for the next round
+		state.prompt = llama.format_messages(chat_template, state.history[:])
 	}
 }
 
 append_message_to_chat_history :: proc(state: ^Client_State, role: string, content: string) {
-	append_elem(&state.history, llama.Chat_Message {
+	if strings.contains_rune(content, 0) {
+		fmt.println("Warning: recorded output contains NUL character, may get truncated")
+	}
+	new_message := llama.Chat_Message {
 		role = strings.clone_to_cstring(role),
 		content = strings.clone_to_cstring(content)
-	})
+	}
+	append_elem(&state.history, new_message)
+	fmt.printfln("Appended to history: \"%s\":\"%s\"", new_message.role, new_message.content)
+}
+
+write_chat_history_to_file :: proc(path: string, history: [dynamic]llama.Chat_Message) {
+	f, ferr := os.open(path, os.File_Flags{.Write, .Append, .Create})
+	if ferr != nil {
+		fmt.eprintfln("Could not open file for writing: %s", os.error_string(ferr))
+		return
+	}
+	defer os.close(f)
+
+	stream: io.Stream = os.to_stream(f)
+	for msg in history {
+		write_cstring(stream, msg.role)
+		io.write_string(stream, ":")
+		write_cstring(stream, msg.content)
+		io.write_string(stream, "\n")
+	}
+}
+
+write_cstring :: proc(stream: io.Stream, text: cstring) -> io.Error {
+
+	input := strings.clone_from_cstring(text)
+	defer delete(input)
+
+	bytes_written, err := io.write_string(stream, input)
+	if err != .None {
+		return err
+	}
+	return .None
 }
