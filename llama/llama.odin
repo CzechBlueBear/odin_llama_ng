@@ -27,6 +27,7 @@ set_proc_address :: proc(p: rawptr, name: string) {
 backend_init: proc "c" ();
 backend_free: proc "c" ();
 model_load_from_file: proc "c" (model_path: cstring, model_params: Model_Params) -> llama_model_ptr
+model_free : proc "c" (model: llama_model_ptr)
 model_get_vocab: proc "c" (model: llama_model_ptr) -> llama_vocab_ptr
 init_from_model: proc "c" (model: llama_model_ptr, params: Context_Params) -> llama_context_ptr
 
@@ -37,6 +38,8 @@ token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, le
 tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
 batch_get_one   : proc "c" (tokens: [^]Token, n_tokens: c.int32_t) -> Batch
+batch_free      : proc "c" (batch: Batch)
+
 n_ctx           : proc "c" (ctx: llama_context_ptr) -> c.uint32_t
 get_memory      : proc "c" (ctx: llama_context_ptr) -> llama_memory_ptr
 memory_seq_pos_max : proc "c" (mem: llama_memory_ptr, seq_id: llama_seq_id) -> llama_pos
@@ -64,6 +67,7 @@ load_library :: proc () -> bool {
 	set_proc_address(&backend_init, "llama_backend_init")
 	set_proc_address(&backend_free, "llama_backend_free")
 	set_proc_address(&model_load_from_file, "llama_model_load_from_file")
+	set_proc_address(&model_free, "llama_model_free")
 	set_proc_address(&model_get_vocab, "llama_model_get_vocab")
 	set_proc_address(&init_from_model, "llama_init_from_model")
 	set_proc_address(&context_default_params, "llama_context_default_params")
@@ -71,6 +75,7 @@ load_library :: proc () -> bool {
 	set_proc_address(&token_to_piece, "llama_token_to_piece")
 	set_proc_address(&tokenize_raw, "llama_tokenize")
 	set_proc_address(&batch_get_one, "llama_batch_get_one")
+	set_proc_address(&batch_free, "llama_batch_free")
 	set_proc_address(&n_ctx, "llama_n_ctx")
 	set_proc_address(&get_memory, "llama_get_memory")
 	set_proc_address(&memory_seq_pos_max, "llama_memory_seq_pos_max")
