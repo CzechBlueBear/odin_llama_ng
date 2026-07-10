@@ -9,6 +9,7 @@ import "core:log"
 import "core:io"
 import "core:terminal/ansi"
 import "base:runtime"
+import "core:encoding/json"
 import "llama"
 
 Client_State :: struct {
@@ -132,8 +133,7 @@ main :: proc() {
 				break
 			}
 
-			// pending message
-			print_thinking_spinner(&state, len(prompt_tokens))
+			fmt.print(token_text)
 
 			// append the token to the response
 	        strings.write_string(&response, token_text);
@@ -198,7 +198,6 @@ append_message_to_chat_history :: proc(state: ^Client_State, role: string, conte
 		content = strings.clone_to_cstring(content)
 	}
 	append_elem(&state.history, new_message)
-	fmt.printfln("Appended to history: \"%s\":\"%s\"", new_message.role, new_message.content)
 }
 
 write_chat_history_to_file :: proc(path: string, history: [dynamic]llama.Chat_Message) {
@@ -209,25 +208,38 @@ write_chat_history_to_file :: proc(path: string, history: [dynamic]llama.Chat_Me
 	}
 	defer os.close(f)
 
+	options := json.Marshal_Options {}
+
 	stream: io.Stream = os.to_stream(f)
 	for msg in history {
-		write_cstring(stream, msg.role)
-		io.write_string(stream, ":")
-		write_cstring(stream, msg.content)
-		io.write_string(stream, "\n")
+		role := sanitize_string(msg.role)
+		defer delete(role)
+		content := sanitize_string(msg.content)
+		defer delete(content)
+		fmt.wprintf(stream, "{{\n   \"role\": \"%s\",\n   \"content\": \"%s\"\n}}\n",
+			role, content)
 	}
 }
 
-write_cstring :: proc(stream: io.Stream, text: cstring) -> io.Error {
+/// Sanitizes the string for use in a JSON string.
+/// The result is newly allocated.
+sanitize_string :: proc(input: cstring) -> string {
+	str := string(input)
 
-	input := strings.clone_from_cstring(text)
-	defer delete(input)
+	buf := strings.Builder {}
 
-	bytes_written, err := io.write_string(stream, input)
-	if err != .None {
-		return err
+	for r in str {
+		if r == '\n' {
+			strings.write_string(&buf, "\\n")
+		}
+		else if r == '"' {
+			strings.write_string(&buf, "\"")
+		}
+		else {
+			strings.write_rune(&buf, r)
+		}
 	}
-	return .None
+	return strings.to_string(buf)
 }
 
 print_thinking_spinner :: proc(state: ^Client_State, token_count: int) {
