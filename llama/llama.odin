@@ -6,7 +6,12 @@ import "core:fmt"
 import "core:strings"
 import "base:runtime"
 
-LLAMA_DYNLIB_PATH :: "/usr/local/lib/libllama.so"
+// various locations where the llama dynamic library might be installed,
+// this can differ depending on which distro is running, how llama.cpp was installed, etc.
+LLAMA_DYNLIB_PATH_CANDIDATES :: []string {
+	"/usr/local/lib/libllama.so",
+	"/usr/lib/libllama.so"
+}
 
 libllama: dynlib.Library
 
@@ -59,9 +64,16 @@ model_chat_template : proc "c" (model: llama_model_ptr, name: cstring) -> cstrin
 
 load_library :: proc () -> bool {
 	ok: bool
-	libllama, ok = dynlib.load_library(LLAMA_DYNLIB_PATH)
+
+	// look where the library might be
+	for candidate_path in LLAMA_DYNLIB_PATH_CANDIDATES {
+		libllama, ok = dynlib.load_library(candidate_path)
+		if ok {
+			break
+		}
+	}
 	if !ok {
-		return false
+		panic("Could not find libllama.so (not installed?)")
 	}
 
 	set_proc_address(&backend_init, "llama_backend_init")
