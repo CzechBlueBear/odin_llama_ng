@@ -84,6 +84,10 @@ main :: proc() {
     is_first := true
 	for {
 
+		// take everything in the current conversation history so far,
+		// reformat it according to model's recommended format, and make it the new prompt
+		state.prompt = llama.format_messages(state.chat_template, state.history[:])
+
 		// convert prompt into tokens
 		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
 		defer delete(prompt_tokens)
@@ -182,10 +186,6 @@ main :: proc() {
 		}
 
 		append_message_to_chat_history(&state, "user", string(user_input))
-
-		// take everything in the current conversation, reformat it according to
-		// model's recommended format, and prepare for the next round
-		state.prompt = llama.format_messages(state.chat_template, state.history[:])
 	}
 }
 
@@ -250,6 +250,14 @@ print_thinking_spinner :: proc(state: ^Client_State, token_count: int) {
 		"Thinking... %d(+%d) tokens used/%d\r" +
 		ansi.CSI + ansi.RESET + ansi.SGR,
 		n_ctx_used, state.batch.n_tokens, n_ctx)
+}
+
+/// Prints a visually separated message conveying a warning or error (not necessarily fatal).
+complain :: proc(message: string) {
+	fmt.printf(
+		ansi.CSI + ansi.FG_RED + ansi.SGR + 
+		"%s\n" + ansi.CSI + ansi.RESET + ansi.SGR,
+		message)
 }
 
 unload_model :: proc(state: ^Client_State) {

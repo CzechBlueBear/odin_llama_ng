@@ -123,23 +123,49 @@ token_to_string :: proc (vocab: llama_vocab_ptr, token: Token) -> (string, bool)
 	return token_text, true
 }
 
-format_messages :: proc (tmpl: cstring, messages: []Chat_Message) -> string
+format_messages :: proc (tmpl: cstring, messages: []Chat_Message, add_assistant_token: bool = false) -> string
 {
-	// dry run to see how much space we will need (in bytes), plus 1 for the terminating zero
-	needed_length := chat_apply_template(tmpl, &messages[0], len(messages), true, nil, 0);
-	buf, err := runtime.mem_alloc(int(needed_length) + 1)
-	if err != nil {
-		panic("Out of memory when allocating formatting buffer")
+	if len(messages) == 0 {
+		panic("List of messages is empty (it should contain at least the first prompt)")
 	}
 
+	// dry run to see how much space we will need (in bytes)
+	needed_length := chat_apply_template(tmpl, &messages[0], len(messages), add_assistant_token, nil, 0);
+	if needed_length <= 0 {
+		fmt.printfln("warning: Could not apply chat template (incompatible model?), proceeding with the backup")
+		return format_messages_backup(messages)
+	}
+
+	buf, err := runtime.mem_alloc(int(needed_length) + 1) // plus 1 for the terminating zero
+	if err != nil {
+		panic("Error allocating formatting buffer (out of memory?)")
+	}
+
+	fmt.printfln("Needed %d bytes for messages (%d messages in total)", needed_length, len(messages))
+
 	// do the template application in real
-	result := chat_apply_template(tmpl, &messages[0], len(messages), true, &buf[0], needed_length);
+	result := chat_apply_template(tmpl, &messages[0], len(messages), add_assistant_token, &buf[0], needed_length);
 	if result < 0 {
-		panic("Could not apply chat template (out of memory?)")
+		fmt.printfln("warning: Could not apply chat template (bug or out of memory?), proceeding with the backup")
+		runtime.mem_free(transmute(rawptr)(&buf))
+		return format_messages_backup(messages)
 	}
 
 	// transfer ownership of buf into a new string, and return it
 	return string(buf)
+}
+
+format_messages_backup :: proc(messages: []Chat_Message) -> string
+{
+	buf := strings.Builder {}
+	for m in messages {
+		strings.write_string(&buf, string(m.role))
+		strings.write_string(&buf, ": ")
+		strings.write_string(&buf, string(m.content))
+		strings.write_string(&buf, "\n")
+		//fmt.bprintf(buf, "%s: %s\n", m.role, m.content)
+	}
+	return strings.to_string(buf)
 }
 
 /// Tokenizes the text using the given vocabulary and returns it as a dynamic array of tokens.
