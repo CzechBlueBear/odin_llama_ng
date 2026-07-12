@@ -5,13 +5,20 @@ import "core:os"
 import "core:io"
 import "core:fmt"
 import "core:encoding/json"
+import "core:time"
 import "llama"
 
-HISTORY_FILE_PATH :: "./chat_history.json"
+HISTORY_FILE_PREFIX :: "./chat_history"
 
 open_history :: proc(state: ^Client_State) {
+	t := time.now()
+	year, month, day := time.date(t)
+	hour, min, sec := time.clock_from_time(t)
+	filename := fmt.aprintf("%s-%4d-%s-%2d-%2d%2d.json", HISTORY_FILE_PREFIX, year, month, day, hour, min)
+	defer delete(filename)
+
 	f, ferr := os.open(
-		HISTORY_FILE_PATH,
+		filename,
 		os.File_Flags{.Write, .Append, .Create},
 		os.Permissions{.Read_User, .Write_User, .Read_Group, .Write_Group, .Read_Other}
 	)

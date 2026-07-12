@@ -114,6 +114,7 @@ main :: proc() {
 		n_ctx := llama.n_ctx(state.ctx)
 
         // how many tokens we consume for the prompt
+        // FIXME: what the hell is the first part of the sum here
         n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
 
         if i32(n_ctx_used) + i32(state.batch.n_tokens) > i32(n_ctx) {
