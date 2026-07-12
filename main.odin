@@ -12,10 +12,13 @@ import "base:runtime"
 import "core:encoding/json"
 import "llama"
 
+MIN_CONTEXT_SIZE :: 8192
+
 Client_State :: struct {
 	model_path: string,
 	prompt: string,
 	history: [dynamic]llama.Chat_Message,
+	history_stream: io.Stream,
 	model: llama.llama_model_ptr,
 	vocab: llama.llama_vocab_ptr,
 	ctx: llama.llama_context_ptr,
@@ -24,7 +27,8 @@ Client_State :: struct {
 	chat_template: cstring,
 }
 
-deinit_client_state :: proc (state: Client_State) {
+deinit_client_state :: proc (state: ^Client_State) {
+	close_history(state)
 }
 
 main :: proc() {
@@ -37,7 +41,7 @@ main :: proc() {
 	log.debug("llama.load_library() ok")
 
 	state: Client_State
-	defer deinit_client_state(state)
+	defer deinit_client_state(&state)
 
 	// get model name and prompt from the command line
 	args := os.args
@@ -77,6 +81,8 @@ main :: proc() {
 		}
 	}
 
+	open_history(&state)
+
 	// store the initial prompt (just "prompt" in LLM user parlance)
 	append_message_to_chat_history(&state, "prompt", state.prompt)
 
@@ -86,7 +92,10 @@ main :: proc() {
 
 		// take everything in the current conversation history so far,
 		// reformat it according to model's recommended format, and make it the new prompt
-		state.prompt = llama.format_messages(state.chat_template, state.history[:])
+		// FIXME: the recommended format is often wrong and the backup tends to work better, not sure what to do
+		//state.prompt = llama.format_messages(state.chat_template, state.history[:])
+		state.prompt = llama.format_messages_backup(state.history[:])
+		fmt.println(state.prompt)
 
 		// convert prompt into tokens
 		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
@@ -165,13 +174,11 @@ main :: proc() {
 				if strings.starts_with(user_input, "/quit") {
 					return
 				}
-				else if strings.starts_with(user_input, "/record") {
-					write_chat_history_to_file("./chat_history.txt", state.history)
-					continue command_loop
-				}
-				else {
-					fmt.eprintln("Unrecognized command")
-				}
+				// else if strings.starts_with(user_input, "/record") {
+				// 	write_chat_history_to_file("./chat_history.txt", state.history)
+				// 	continue command_loop
+				// }
+				fmt.eprintln("Unrecognized command")
 			}
 			else {
 
@@ -185,61 +192,8 @@ main :: proc() {
 			}
 		}
 
-		append_message_to_chat_history(&state, "user", string(user_input))
+		append_message_to_chat_history(&state, "user", user_input)
 	}
-}
-
-append_message_to_chat_history :: proc(state: ^Client_State, role: string, content: string) {
-	if strings.contains_rune(content, 0) {
-		fmt.println("Warning: recorded output contains NUL character, may get truncated")
-	}
-	new_message := llama.Chat_Message {
-		role = strings.clone_to_cstring(role),
-		content = strings.clone_to_cstring(content)
-	}
-	append_elem(&state.history, new_message)
-}
-
-write_chat_history_to_file :: proc(path: string, history: [dynamic]llama.Chat_Message) {
-	f, ferr := os.open(path, os.File_Flags{.Write, .Append, .Create})
-	if ferr != nil {
-		fmt.eprintfln("Could not open file for writing: %s", os.error_string(ferr))
-		return
-	}
-	defer os.close(f)
-
-	options := json.Marshal_Options {}
-
-	stream: io.Stream = os.to_stream(f)
-	for msg in history {
-		role := sanitize_string(msg.role)
-		defer delete(role)
-		content := sanitize_string(msg.content)
-		defer delete(content)
-		fmt.wprintf(stream, "{{\n   \"role\": \"%s\",\n   \"content\": \"%s\"\n}}\n",
-			role, content)
-	}
-}
-
-/// Sanitizes the string for use in a JSON string.
-/// The result is newly allocated.
-sanitize_string :: proc(input: cstring) -> string {
-	str := string(input)
-
-	buf := strings.Builder {}
-
-	for r in str {
-		if r == '\n' {
-			strings.write_string(&buf, "\\n")
-		}
-		else if r == '"' {
-			strings.write_string(&buf, "\"")
-		}
-		else {
-			strings.write_rune(&buf, r)
-		}
-	}
-	return strings.to_string(buf)
 }
 
 print_thinking_spinner :: proc(state: ^Client_State, token_count: int) {
@@ -275,6 +229,7 @@ load_model :: proc(state: ^Client_State, model_path: string) -> bool {
 	unload_model(state)
 
 	params := llama.model_default_params()
+	params.n_gpu_layers = 99
 
 	// load the model
 	model_path_cstring := strings.clone_to_cstring(state.model_path)
@@ -295,9 +250,10 @@ load_model :: proc(state: ^Client_State, model_path: string) -> bool {
 
     // initialize the context
     ctx_params := llama.context_default_params()
-	n_ctx: c.uint32_t = 2048	// context size; TODO: determined from model
-    ctx_params.n_ctx = n_ctx
-    ctx_params.n_batch = n_ctx
+	// n_ctx := MIN_CONTEXT_SIZE     // llama.model_n_ctx_train(state.model)
+	// assert(n_ctx > 0)
+    ctx_params.n_ctx = MIN_CONTEXT_SIZE
+    ctx_params.n_batch = MIN_CONTEXT_SIZE
 
     state.ctx = llama.init_from_model(state.model, ctx_params)
     if state.ctx == nil {

@@ -39,6 +39,8 @@ init_from_model: proc "c" (model: llama_model_ptr, params: Context_Params) -> ll
 context_default_params: proc "c" () -> Context_Params
 model_default_params: proc "c" () -> Model_Params
 
+model_n_ctx_train: proc "c" (model: llama_model_ptr) -> c.int32_t
+
 token_to_piece: proc "c" (vocab: llama_vocab_ptr, token: Token, buf: ^c.char, length: c.int32_t, lstrip: c.int32_t, special: bool) -> c.int32_t
 tokenize_raw: proc "c" (vocab: llama_vocab_ptr, text: cstring, text_len: c.int32_t, tokens: [^]Token, n_tokens_max: c.int32_t, add_special: bool, parse_special: bool) -> c.int32_t
 
@@ -84,6 +86,7 @@ load_library :: proc () -> bool {
 	set_proc_address(&init_from_model, "llama_init_from_model")
 	set_proc_address(&context_default_params, "llama_context_default_params")
 	set_proc_address(&model_default_params, "llama_model_default_params")
+	set_proc_address(&model_n_ctx_train, "llama_model_n_ctx_train")
 	set_proc_address(&token_to_piece, "llama_token_to_piece")
 	set_proc_address(&tokenize_raw, "llama_tokenize")
 	set_proc_address(&batch_get_one, "llama_batch_get_one")
@@ -132,7 +135,7 @@ format_messages :: proc (tmpl: cstring, messages: []Chat_Message, add_assistant_
 	// dry run to see how much space we will need (in bytes)
 	needed_length := chat_apply_template(tmpl, &messages[0], len(messages), add_assistant_token, nil, 0);
 	if needed_length <= 0 {
-		fmt.printfln("warning: Could not apply chat template (incompatible model?), proceeding with the backup")
+		fmt.printfln("warning: Could not apply chat template (incompatible model?), using the builtin alternative")
 		return format_messages_backup(messages)
 	}
 
@@ -146,7 +149,7 @@ format_messages :: proc (tmpl: cstring, messages: []Chat_Message, add_assistant_
 	// do the template application in real
 	result := chat_apply_template(tmpl, &messages[0], len(messages), add_assistant_token, &buf[0], needed_length);
 	if result < 0 {
-		fmt.printfln("warning: Could not apply chat template (bug or out of memory?), proceeding with the backup")
+		fmt.printfln("warning: Could not apply chat template (bug or out of memory?), using the builtin alternative")
 		runtime.mem_free(transmute(rawptr)(&buf))
 		return format_messages_backup(messages)
 	}
@@ -163,7 +166,6 @@ format_messages_backup :: proc(messages: []Chat_Message) -> string
 		strings.write_string(&buf, ": ")
 		strings.write_string(&buf, string(m.content))
 		strings.write_string(&buf, "\n")
-		//fmt.bprintf(buf, "%s: %s\n", m.role, m.content)
 	}
 	return strings.to_string(buf)
 }

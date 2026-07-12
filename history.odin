@@ -1,0 +1,69 @@
+package llama_odin_ng
+
+import "core:strings"
+import "core:os"
+import "core:io"
+import "core:fmt"
+import "core:encoding/json"
+import "llama"
+
+HISTORY_FILE_PATH :: "./chat_history.json"
+
+open_history :: proc(state: ^Client_State) {
+	f, ferr := os.open(
+		HISTORY_FILE_PATH,
+		os.File_Flags{.Write, .Append, .Create},
+		os.Permissions{.Read_User, .Write_User, .Read_Group, .Write_Group, .Read_Other}
+	)
+	if ferr != nil {
+		panic("Could not open history file for writing")
+	}
+	state.history_stream = os.to_stream(f)
+}
+
+close_history :: proc(state: ^Client_State) {
+	io.close(state.history_stream)
+}
+
+append_message_to_chat_history :: proc(state: ^Client_State, role: string, content: string) {
+
+	// add it to the memory-backed history record
+	new_message := llama.Chat_Message {
+		role = strings.clone_to_cstring(role),
+		content = strings.clone_to_cstring(content)
+	}
+	append_elem(&state.history, new_message)
+
+	// also immediately write it into the file so it's safe
+	role_sanitized := sanitize_string_for_json(string(role))
+	defer delete(role_sanitized)
+	content_sanitized := sanitize_string_for_json(string(content))
+	defer delete(content_sanitized)
+	fmt.wprintf(state.history_stream, "{{\n   \"role\": \"%s\",\n   \"content\": \"%s\"\n}},\n",
+		role_sanitized, content_sanitized)
+}
+
+/// Sanitizes the string for use in a JSON string.
+/// The result is newly allocated.
+sanitize_string_for_json :: proc(str: string) -> string {
+	buf := strings.Builder {}
+
+	for r in str {
+		if r == '\n' {
+			strings.write_string(&buf, "\\n")
+		}
+		else if r == '"' {
+			strings.write_string(&buf, "\"")
+		}
+		else if r == '\\' {
+			strings.write_string(&buf, "\\")
+		}
+		else if r == '/' {
+			strings.write_string(&buf, "\\/")
+		}
+		else {
+			strings.write_rune(&buf, r)
+		}
+	}
+	return strings.to_string(buf)
+}
