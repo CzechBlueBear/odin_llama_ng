@@ -38,6 +38,10 @@ main :: proc() {
 	}
 	//readline_init()	// FIXME: crashes later in readline() call
 
+	// separate system prompt if requested
+	system_prompt, have_system_prompt := os.lookup_env_alloc("SYSTEM_PROMPT", context.allocator)
+	defer delete(system_prompt)
+
 	log.debug("llama.load_library() ok")
 
 	state: Client_State
@@ -50,7 +54,11 @@ main :: proc() {
 			state.model_path = args[i]
 		}
 		else if len(state.prompt) == 0 {
-			state.prompt = strings.clone(args[i])
+			if have_system_prompt {
+				state.prompt = strings.concatenate({ system_prompt, args[i] })
+			} else {
+				state.prompt = strings.clone(args[i])
+			}
 		}
 	}
 
@@ -86,81 +94,12 @@ main :: proc() {
 	// store the initial prompt (just "prompt" in LLM user parlance)
 	append_message_to_chat_history(&state, "prompt", state.prompt)
 
-	response := strings.builder_make()
-    is_first := true
 	for {
-
-		// take everything in the current conversation history so far,
-		// reformat it according to model's recommended format, and make it the new prompt
-		// FIXME: the recommended format is often wrong and the backup tends to work better, not sure what to do
-		//state.prompt = llama.format_messages(state.chat_template, state.history[:])
-		state.prompt = llama.format_messages_backup(state.history[:])
-		fmt.println(state.prompt)
-
-		// convert prompt into tokens
-		prompt_tokens := llama.tokenize(state.vocab, state.prompt, is_first, true)
-		defer delete(prompt_tokens)
-
-		is_first = false
-
-		// prepare a batch for response generation
-		state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
-
-		// check if we have enough space in the context to evaluate this batch
-		// note that the context contains the prompt and the response is written after it
-		// so in order to fit, it must accomodate both
-
-		// maximum capacity of the context
-		n_ctx := llama.n_ctx(state.ctx)
-
-        // how many tokens we consume for the prompt
-        // FIXME: what the hell is the first part of the sum here
-        n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
-
-        if i32(n_ctx_used) + i32(state.batch.n_tokens) > i32(n_ctx) {
-            fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
-            return
-        }
-
-	    // evaluate the batch by calling decode(), each call generates a token
-	    for {
-
-			// sample from the logits of the last token in the batch
-	        ret := llama.decode(state.ctx, state.batch)
-	        if ret != 0 {
-	        	fmt.eprintln("Failed decoding model reply")
-	        	return
-	        }
-
-	        // sample the next token
-	        new_token_id := llama.sampler_sample(state.sampler, state.ctx, -1)
-
-	        // is it an end of generation?
-	        if llama.vocab_is_eog(state.vocab, new_token_id) {
-	            break
-	        }
-
-	        // convert the token to a string, print it and add it to the response
-			token_text, ok := llama.token_to_string(state.vocab, new_token_id)
-			if !ok {
-				fmt.eprintfln("Error decoding token")
-				break
-			}
-
-			fmt.print(token_text)
-
-			// append the token to the response
-	        strings.write_string(&response, token_text);
-	        delete(token_text)
-
-	        // prepare the next batch with the sampled token
-	        state.batch = llama.batch_get_one(&new_token_id, 1);
-	    }
-
-	    if len(response.buf) > 0 {
-		    fmt.println(strings.to_string(response))
-			append_message_to_chat_history(&state, "ai", strings.to_string(response))
-			strings.builder_reset(&response)
+		response, ok := generate_response(&state)
+	    if ok {
+		    fmt.println(response)
+			append_message_to_chat_history(&state, "ai", response.(string))
+			delete_string(response.(string))
 		}
 
 		user_input: string
@@ -197,14 +136,14 @@ main :: proc() {
 	}
 }
 
-print_thinking_spinner :: proc(state: ^Client_State, token_count: int) {
-	n_ctx := llama.n_ctx(state.ctx)
-	n_ctx_used := int(llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0)) + token_count
+print_thinking_spinner :: proc(state: ^Client_State, pending_token: string) {
+	n_ctx_max := llama.n_ctx(state.ctx)
+	n_ctx_used := int(llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0)) + int(state.batch.n_tokens)
 	fmt.printf(
 		ansi.CSI + ansi.FG_BLUE + ansi.SGR +
-		"Thinking... %d(+%d) tokens used/%d\r" +
+		"Generating... %d/%d: %s                                  \r" +
 		ansi.CSI + ansi.RESET + ansi.SGR,
-		n_ctx_used, state.batch.n_tokens, n_ctx)
+		n_ctx_used, n_ctx_max, pending_token)
 }
 
 /// Prints a visually separated message conveying a warning or error (not necessarily fatal).
@@ -234,7 +173,7 @@ load_model :: proc(state: ^Client_State, model_path: string) -> bool {
 
 	// load the model
 	model_path_cstring := strings.clone_to_cstring(state.model_path)
-	defer free(rawptr(model_path_cstring))
+	defer delete(model_path_cstring)
 	state.model_path = model_path
 	state.model = llama.model_load_from_file(model_path_cstring, params)
 	if state.model == nil {
@@ -251,6 +190,8 @@ load_model :: proc(state: ^Client_State, model_path: string) -> bool {
 
     // initialize the context
     ctx_params := llama.context_default_params()
+    // (bluebear) FIXME: llama.model_n_ctx_train(state.model) will give the maximum context size the model
+    // is trained on, but that is often more than a machine can use
 	// n_ctx := MIN_CONTEXT_SIZE     // llama.model_n_ctx_train(state.model)
 	// assert(n_ctx > 0)
     ctx_params.n_ctx = MIN_CONTEXT_SIZE
@@ -276,4 +217,80 @@ load_model :: proc(state: ^Client_State, model_path: string) -> bool {
 	}
 
 	return true
+}
+
+generate_response :: proc (state: ^Client_State) -> (Maybe(string), bool)
+{
+	// take everything in the current conversation history so far,
+	// reformat it according to model's recommended format, and make it the new prompt
+
+	// (bluebear) FIXME: this would use the recommended format for the model;
+	// however, it does not much work for me. The "dumb" backup formatter tends to work better.
+	//state.prompt = llama.format_messages(state.chat_template, state.history[:])
+
+	state.prompt = llama.format_messages_backup(state.history[:])
+	fmt.println(state.prompt)
+
+	// convert prompt into tokens
+	prompt_tokens := llama.tokenize(state.vocab, state.prompt, add_special=true, parse_special=true)
+	defer delete(prompt_tokens)
+
+	// prepare a batch for response generation
+	state.batch = llama.batch_get_one(&prompt_tokens[0], i32(len(prompt_tokens)));
+
+	// check if we have enough space in the context to evaluate this batch
+	// note that the context contains *both* the prompt and the place where response will be written
+	// (the model, quite literally, accepts an incomplete text an attempts to complete it),
+	// so it must accomodate both.
+
+	// maximum capacity of the context
+	n_ctx := llama.n_ctx(state.ctx)
+
+	// how many tokens we consume for the prompt
+	// (bluebear) FIXME: what the hell is the first part of the sum here
+	n_ctx_used := llama.memory_seq_pos_max(llama.get_memory(state.ctx), 0) + llama.llama_pos(len(prompt_tokens));
+
+	if i32(n_ctx_used) + i32(state.batch.n_tokens) > i32(n_ctx) {
+		fmt.eprintfln("Context size exceeded (would need %d, currently %d in use)", n_ctx_used, n_ctx)
+		return nil, false
+	}
+
+	response := strings.Builder {}
+
+	// evaluate the batch by calling decode(), each call generates a token
+	for {
+
+		// sample from the logits of the last token in the batch
+		ret := llama.decode(state.ctx, state.batch)
+		if ret != 0 {
+			fmt.eprintln("Error decoding model reply (out of tokens?)")
+			return nil, false
+		}
+
+		// sample the next token
+		new_token_id := llama.sampler_sample(state.sampler, state.ctx, -1)
+
+		// is it an end of generation?
+		if llama.vocab_is_eog(state.vocab, new_token_id) {
+			break
+		}
+
+		// convert the token to a string, print it and add it to the response
+		token_text, ok := llama.token_to_string(state.vocab, new_token_id)
+		if !ok {
+			fmt.eprintfln("Error decoding token")
+			break
+		}
+
+		print_thinking_spinner(state, token_text)
+
+		// append the token to the response
+		strings.write_string(&response, token_text);
+		delete(token_text)
+
+		// prepare the next batch with the sampled token
+		state.batch = llama.batch_get_one(&new_token_id, 1);
+	}
+
+	return strings.to_string(response), true
 }
