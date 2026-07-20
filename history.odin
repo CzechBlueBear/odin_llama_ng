@@ -10,6 +10,33 @@ import "llama"
 
 HISTORY_FILE_PREFIX :: "./chat_history"
 
+load_history :: proc(state: ^Client_State, path: string) {
+	text, ferr := os.read_entire_file_from_path(path, context.allocator)
+	if ferr != nil {
+		panic("Could not open history file for reading")
+	}
+
+	tree := json.Array {}
+	json.unmarshal(text, &tree)
+
+	for item in tree {
+		switch v in item {
+			case json.Object:
+
+				// extract the message items and load them to the in-memory array
+				role := v["role"].(string)
+				content := v["content"].(string)
+				new_message := llama.Chat_Message {
+					role = strings.clone_to_cstring(role),
+					content = strings.clone_to_cstring(content)
+				}
+				append_elem(&state.history, new_message)
+			case i64, f64, bool, string, json.Array, json.Null:
+				// skip
+		}
+	}
+}
+
 open_history :: proc(state: ^Client_State) {
 	t := time.now()
 	year, month, day := time.date(t)
